@@ -8,12 +8,14 @@
 #include <errno.h>
 
 #include <unistd.h>
-#include <sys/time.h>
 #include <fcntl.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <netdb.h>
 #include <poll.h>
 
@@ -27,7 +29,6 @@ struct socket {
     int sock_protocol;
     double sock_timeout;   /* in seconds */
 };
-
 
 #define tolsocket(L) ((struct socket *)luaL_checkudata(L, 1, SOCKET_NAME));
 #define TIMEVAL_ADDSECONDS(tv, interval) \
@@ -427,9 +428,9 @@ sock_recv(lua_State * L)
     int timeout;
     BEGIN_SELECT_LOOP(s)
     timeout = __select(s, 0, interval);
-    if (!timeout)
+    if (!timeout) {
         bytes = recv(s->fd, buf, bufsize, flags);
-    if (timeout == 1) {
+    } else if (timeout == 1) {
         lua_pushnil(L);
         lua_pushstring(L, "timed out");
         return 2;
@@ -440,7 +441,7 @@ sock_recv(lua_State * L)
 }
 
 /**
- * sock:close
+ * sock:close()
  *
  * Set the file descriptor to -1 so operations tried subsequently will surely
  * fail.
@@ -458,6 +459,70 @@ sock_close(lua_State * L)
     }
 
     return 0;
+}
+
+/**
+ * sock:fileno()
+ *
+ * Return the integer file descriptor of the socket.
+ */
+static int
+sock_fileno(lua_State *L)
+{
+    struct socket *s = tolsocket(L);
+    lua_pushnumber(L, s->fd);
+    return 1;
+}
+
+/**
+ * ok, err = sock:setoption(level, optname, value)
+ *
+ * Set a socket option. See the Unix manual for level and option.
+ */
+static int
+sock_setoption(lua_State *L)
+{
+    struct socket *s = tolsocket(L);
+    int level = luaL_checknumber(L, 2);
+    int optname = luaL_checknumber(L, 3);
+    int flag = luaL_checknumber(L, 4);
+    char *buf;
+    socklen_t buflen;
+    buf = (char *)&flag;
+    buflen = sizeof(flag);
+    int err;
+    err = setsockopt(s->fd, level, optname, (void *)buf, buflen);
+    if (err < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(errno));
+        return 2;
+    }
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/**
+ * value, err = sock:getopt(level, option)
+ *
+ * Get a socket option. See the Unix manual for level and option.
+ */
+static int
+sock_getoption(lua_State *L)
+{
+    struct socket *s = tolsocket(L);
+    int level = luaL_checknumber(L, 2);
+    int optname = luaL_checknumber(L, 3);
+    int flag;
+    int err;
+    socklen_t flagsize = sizeof(flag);
+    err = getsockopt(s->fd, level, optname, (void *)&flag, &flagsize);
+    if (err < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(errno));
+        return 2;
+    }
+    lua_pushboolean(L, flag);
+    return 1;
 }
 
 /**
@@ -491,6 +556,20 @@ sock_settimeout(lua_State * L)
     return 0;
 }
 
+/* 
+ * sock:gettimeout()
+ *
+ * Returns the timeout in seconds (number) associated with socket.
+ * A negative timeout indicates that timeout is disabled.
+ */
+static int
+sock_gettimeout(lua_State *L)
+{
+    struct socket *s = tolsocket(L);
+    lua_pushnumber(L, s->sock_timeout);
+    return 1;
+}
+
 /**
  * sock:setblocking(block)
  *
@@ -519,7 +598,11 @@ static const luaL_Reg sock_methods[] = {
     {"send", sock_send},
     {"recv", sock_recv},
     {"close", sock_close},
+    {"fileno", sock_fileno},
+    {"setoption", sock_setoption},
+    {"getoption", sock_getoption},
     {"settimeout", sock_settimeout},
+    {"gettimeout", sock_gettimeout},
     {"setblocking", sock_setblocking},
     {NULL, NULL},
 };
@@ -544,6 +627,9 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(SOCK_RAW);
     ADD_NUM_CONST(SOCK_RDM);
     ADD_NUM_CONST(SOCK_SEQPACKET);
+    
+    // socket.SOMAXCONN
+    ADD_NUM_CONST(SOMAXCONN);
 
     // AI_*
     ADD_NUM_CONST(AI_PASSIVE);
@@ -557,7 +643,7 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(AI_V4MAPPED);
     ADD_NUM_CONST(AI_DEFAULT);
 
-    // INADDR_* Some reserved IPv4 addresses */
+    // INADDR_* Some reserved IPv4 addresses
     ADD_NUM_CONST(INADDR_ANY);
     ADD_NUM_CONST(INADDR_BROADCAST);
     ADD_NUM_CONST(INADDR_LOOPBACK);
@@ -565,6 +651,10 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(INADDR_ALLHOSTS_GROUP);
     ADD_NUM_CONST(INADDR_MAX_LOCAL_GROUP);
     ADD_NUM_CONST(INADDR_NONE);
+
+    // TCP_* Tcp options
+    ADD_NUM_CONST(TCP_NODELAY);
+    ADD_NUM_CONST(TCP_KEEPALIVE);
 
     // Create a metatable for socket userdata.
     luaL_newmetatable(L, SOCKET_NAME);

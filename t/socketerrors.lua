@@ -1,6 +1,5 @@
 #!/usr/bin/env lua
 require 'Test.More'
-require 'Test.Builder.Tester'
 local socket = require "socket"
 
 plan(1)

@@ -1,10 +1,8 @@
 #!/usr/bin/env lua
 require 'Test.More'
-require 'Test.Builder.Tester'
 local socket = require "socket"
 
-plan(1)
-
+plan(4)
 sock = socket.tcp()
 local ok, err = sock:connect("www.google.com", 80)
 if not ok then
@@ -14,7 +12,9 @@ local bytes, err = sock:send("GET /notfound HTTP/1.1\r\n")
 is(bytes, 24)
 local bytes, err = sock:send("\r\n")
 is(bytes, 2)
-sock:settimeout(0.1)
+timeout = 0.1
+sock:settimeout(timeout)
+is(sock:gettimeout(), timeout)
 local ok, err = sock:recv(22)
 if not ok then
   is(err, "timed out")
