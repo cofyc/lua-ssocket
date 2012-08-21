@@ -27,3 +27,6 @@ uninstall:
 clean:
 	$(RM) socket.so
 	$(RM) -r socket.so.dSYM
+
+test:
+	@prove --exec=lua --timer t/*.lua
