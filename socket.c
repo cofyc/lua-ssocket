@@ -8,73 +8,233 @@
 #include <errno.h>
 
 #include <unistd.h>
+#include <sys/time.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <poll.h>
 
 #define SOCKET_NAME     "SOCKET*"
 
+/* Socket */
 struct socket {
     int fd;
-    int timeout;
+    int sock_family;
+    int sock_type;
+    int sock_protocol;
+    double sock_timeout;   /* in seconds */
 };
 
-#define tolsocket(L) ((struct socket *)luaL_checkudata(L, 1, SOCKET_NAME));
 
-static const char *
-__socket_gaistrerror(int err)
+#define tolsocket(L) ((struct socket *)luaL_checkudata(L, 1, SOCKET_NAME));
+#define TIMEVAL_ADDSECONDS(tv, interval) \
+    do { \
+            tv.tv_usec += (long) (((long) interval - interval) * 1000000); \
+            tv.tv_sec += (time_t) interval + (time_t) (tv.tv_usec / 1000000); \
+            tv.tv_usec %= 1000000; \
+    } while (0)
+#define TIMEVAL_INTERVAL(tv_start, tv_end) \
+        ((tv_end.tv_sec - tv_start.tv_sec) + \
+              (tv_end.tv_usec - tv_start.tv_usec) * 0.000001)
+#define CHECK_ERRNO(expected)   (errno == expected)
+
+/**
+ * Function to perform the setting of socket blocking mode.
+ */
+static void
+__setblocking(struct socket *s, int block)
 {
-    if (err == 0)
-        return NULL;
-    switch (err) {
-    case EAI_AGAIN:
-        return "temporary failure in name resolution";
-    case EAI_BADFLAGS:
-        return "invalid value for ai_flags";
-#ifdef EAI_BADHINTS
-    case EAI_BADHINTS:
-        return "invalid value for hints";
-#endif
-    case EAI_FAIL:
-        return "non-recoverable failure in name resolution";
-    case EAI_FAMILY:
-        return "ai_family not supported";
-    case EAI_MEMORY:
-        return "memory allocation failure";
-    case EAI_NONAME:
-        return "host or service not provided, or not known";
-    case EAI_OVERFLOW:
-        return "argument buffer overflow";
-#ifdef EAI_PROTOCOL
-    case EAI_PROTOCOL:
-        return "resolved protocol is unknown";
-#endif
-    case EAI_SERVICE:
-        return "service not supported for socket type";
-    case EAI_SOCKTYPE:
-        return "ai_socktype not supported";
-    case EAI_SYSTEM:
-        return strerror(errno);
-    default:
-        return gai_strerror(err);
+    int flags = fcntl(s->fd, F_GETFL, 0);
+    if (block) {
+        flags &= (~O_NONBLOCK);
+    } else {
+        flags |= O_NONBLOCK;
     }
+    fcntl(s->fd, F_SETFL, flags);
 }
 
 /**
- * sock = socket.socket(family, type)
+ * Do a select()/poll() on the socket, if necessary (sock_timeout > 0).
+ *
+ * The argument writing indicates the direction.
+ *
+ * Returns:
+ *  1   on timeout
+ *  -1  on error
+ *  0   success
+ */
+static int
+__select(struct socket *s, int writing, double interval)
+{
+    int n;
+
+    // Nothing to do if we're not in timeout mode.
+    if (s->sock_timeout <= 0.0)
+        return 0;
+
+    // Nothing to do if socket is closed.
+    if (s->fd < 0)
+        return 0;
+
+    // Handling this condition here simplifies the select loops.
+    if (interval < 0.0)
+        return 1;
+
+    struct pollfd pollfd;
+    pollfd.fd = s->fd;
+    pollfd.events = writing ? POLLOUT : POLLIN;
+    n = poll(&pollfd, 1, (int)(interval * 1000));
+    if (n < 0)
+        return -1;
+    if (n == 0)
+        return 1;
+    return 0;
+}
+
+/*
+ * Two macros for automatic retry of `select` in case of false positives (for
+ * example, select could indicate a socket is ready for reading but the data
+ * then discarded by the OS because of a wrong checksum).
+ *
+ * Example of use:
+ *  BEGIN_SELECT_LOOP(s)
+ *  timeout = __select(s, 0, interval);
+ *  if (!timeout)
+ *      outlen = recv(s->fd, buf, len, flags);
+ *  if (timeout == 1) {
+ *      return -1;
+ *  }
+ *  END_SELECT_LOOP(s)
+ */
+#define BEGIN_SELECT_LOOP(s)                            \
+    {                                                   \
+        struct timeval now, deadline = {0, 0};          \
+        double interval = s->sock_timeout;              \
+        int has_timeout = s->sock_timeout > 0;          \
+        if (has_timeout) {                              \
+            gettimeofday(&now, NULL);                   \
+            deadline = now;                             \
+            TIMEVAL_ADDSECONDS(deadline, interval);     \
+        }                                               \
+        while (1) {                                     \
+            errno = 0;
+
+#define END_SELECT_LOOP(s)                              \
+            if (!has_timeout ||                         \
+                (!CHECK_ERRNO(EWOULDBLOCK)              \
+                 && !CHECK_ERRNO(EAGAIN)))              \
+                    break;                              \
+            gettimeofday(&now, NULL);                   \
+            interval = TIMEVAL_INTERVAL(now, deadline); \
+        }                                               \
+    }
+
+/**
+ * Parse a socket address argument according to the socket object's address
+ * family.
+ * Return 1 if the address was in the proper format, 0 if not.
+ *
+ * Socket addresses are represented as follows:
+ *  A single string is used for the AF_UNIX address family.
+ *  Two arguments (host, port) is used for the AF_INET address family,
+ *  where host is a string representing either a hostname in Internet Domain
+ *  Notation like 'www.example.com' or an IPv4 address like '8.8.8.8', and port
+ *  is an number.
+ *  For AF_INET6 address family, four arguments (host, port, flowinfo, scopeid)
+ *  is used, where flowinfo and scopid represents sin6_flowinfo and
+ *  sin6_scope_id member in struct sockaddr_in6 in C. For socket module,
+ *  flowinfo and scopid can be ommited just for backward compatibility.
+ *  Other address family are currently not supported.
+ *
+ * The address format arguments required by a particular socket object is
+ * automatically selected based on the address family specified when the socket
+ * object was created.
+ *
+ * If you use a hostname in the host portion of IPv4/IPv6 socket address, the
+ * program may show a nodeterministic behavior, as we use the first address
+ * returned from the DNS resolution. The socket address will be resolved
+ * differenlty into an actual IPv4/v6 address, depending on the results from DNS
+ * resolution and/or the host configuration. For deterministic behavior use a
+ * numeric address in host portion.
+ *
+ * This method assumed that address arguments start at argument index 2.
+ */
+static int
+__getsockaddrarg(lua_State *L, struct socket *s, struct sockaddr *addr_ret, int *len_ret)
+{
+    switch (s->sock_family) {
+    case AF_INET:
+        {
+            struct sockaddr_in *addr = (struct sockaddr_in*)addr_ret;
+            const char *host;
+            int port;
+            host = luaL_checkstring(L, 2);
+            port = luaL_checknumber(L, 3);
+            struct hostent *hostinfo;
+            hostinfo = gethostbyname(host);
+            if (hostinfo == NULL) {
+                return 0;
+            }
+            addr->sin_family = AF_INET;
+            addr->sin_port = htons(port);
+            addr->sin_addr = *(struct in_addr *)hostinfo->h_addr;
+            *len_ret = sizeof(*addr);
+            return 1;
+            break;
+        }
+    case AF_INET6:
+        {
+            break;
+        }
+    case AF_UNIX:
+        {
+            /*struct sockaddr_un *addr;*/
+            /*char *path;*/
+            /*int len;*/
+            break;
+        }
+    default:
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * sock, err = socket.socket(family, type[, protocol])
+ *
+ * Create a new socket using the given address family, socket type and protocol number.
+ * The address family should be AF_INET, AF_INET6 or AF_UNIX. The
+ * socket type should be SOCK_STREAM, SOCK_DGRAM or perhaps one of
+ * the other SOCK_ constants. The protocol number is usually zero and may be
+ * omitted in that case.
  */
 static int
 socket_socket(lua_State * L)
 {
     int family = (int)luaL_checknumber(L, 1);
     int type = (int)luaL_checknumber(L, 2);
+    int protocol = (int)luaL_optnumber(L, 3, 0);
+    int fd;
+    int err;
+    fd = socket(family, type, protocol);
+    if (fd < 0) {
+        err = errno;
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(err));
+        return 2;
+    }
     struct socket *s =
         (struct socket *)lua_newuserdata(L, sizeof(struct socket));
-    s->fd = socket(family, type, 0);
+    s->fd = fd;
+    s->sock_timeout = -1;
+    s->sock_family = family;
+    s->sock_type = type;
+    s->sock_protocol = protocol;
     luaL_setmetatable(L, SOCKET_NAME);
-    return (s->fd > 0) ? 1 : 0;
+    return 1;
 }
 
 /**
@@ -98,7 +258,7 @@ socket_socket(lua_State * L)
  * how results are computed and returned. For example, AI_NUMERICHOST will
  * disable domain name resolution and will raise an error if host is a domain
  * name.
- *  
+ *
  */
 static int
 socket_getaddrinfo(lua_State * L)
@@ -140,7 +300,7 @@ socket_getaddrinfo(lua_State * L)
     ret = getaddrinfo(hostname, pptr, &hints, &resolved);
     if (ret != 0) {
         lua_pushnil(L);
-        lua_pushstring(L, __socket_gaistrerror(ret));
+        lua_pushstring(L, gai_strerror(ret));
         return 2;
     }
     lua_newtable(L);
@@ -175,71 +335,86 @@ socket_getaddrinfo(lua_State * L)
     return 1;
 }
 
-/*const char **/
-/*inet_try_connect(int fd, const char *address, int port, int timeout, struct addrinfo *connecthints)*/
-/*{*/
-/*struct addrinfo *iterator = NULL, *resolved = NULL;*/
-/*const char *err = NULL;*/
-/*err = __socket_gaistrerror(getaddrinfo(address, */
-/*}*/
-
 /**
  * ok, err = sock:connect(host, port)
- * 
+ *
  * Attemps to connect to TCP socket object to a remote server.
  */
 static int
 sock_connect(lua_State * L)
 {
     struct socket *s = tolsocket(L);
-    const char *host = luaL_checkstring(L, 2);
-    int port = (int)luaL_checknumber(L, 3);
+    struct sockaddr sa;
+    int len;
+    int err;
+    err = __getsockaddrarg(L, s, &sa, &len);
 
-    struct hostent *hostinfo;
-    hostinfo = gethostbyname(host);
-    if (hostinfo == NULL) {
-        return luaL_error(L, "Invalid host to connect: %s", host);
-    }
-    struct sockaddr_in my_addr;
-    memset(&my_addr, 0, sizeof(struct sockaddr_in));
-    my_addr.sin_family = AF_INET;
-    my_addr.sin_port = htons(port);
-    my_addr.sin_addr = *(struct in_addr *)hostinfo->h_addr;
-
-    int r =
-        connect(s->fd, (struct sockaddr *)&my_addr, sizeof(struct sockaddr_in));
-    if (r < 0) {
-        return luaL_error(L, "Cannot connect to %s:%d, error: %s", host, port,
-                          strerror(errno));
+    err = connect(s->fd, (struct sockaddr *)&sa, len);
+    if (err < 0) {
+        err = errno;
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(err));
+        return 2;
     }
 
-    return 0;
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 /**
  * bytes, err = sock:send(data)
  *
- * Sends data.
+ * This method is a synchronous operation that will not return until all the dat
+ * a has been flushed into the system socket send buffer or an error occurs.
+ *
+ * In case of success, it returns the total number of bytes that have been sent.
+ * Otherwise, it returns nil and a string describing the error.
  */
 static int
 sock_send(lua_State * L)
 {
     struct socket *s = tolsocket(L);
-    size_t size;
-    const char *buf = luaL_checklstring(L, 2, &size);
-    ssize_t n = send(s->fd, buf, size, 0);
-    if (n < 0) {
-        return luaL_error(L, "Cannot send data, error: %s", strerror(errno));
-    }
+    size_t len, total_len = 0;
+    const char *buf = luaL_checklstring(L, 2, &len);
+    int flags = 0;
 
-    lua_pushinteger(L, n);
+    do {
+        int timeout = __select(s, 1, s->sock_timeout);
+        if (!timeout) {
+            int n = send(s->fd, buf, len, flags);
+            if (n < 0) {
+                /* If interrrupted, try again */
+                switch (errno) {
+                case EINTR:
+                    continue;
+                default:
+                    break;
+                }
+            }
+            buf += n;
+            len -= n;
+            total_len += n;
+        } else if (timeout == 1) {
+            lua_pushnil(L);
+            lua_pushstring(L, "timed out");
+            return 2;
+        }
+    } while (len > 0);
+
+    lua_pushinteger(L, total_len);
     return 1;
 }
 
 /**
- * sock:recv(bufsize[, flags])
+ * data, err = sock:recv(bufsize[, flags])
  *
- * Receive data from the socket. The return value is a string representing the data received. The maximum amount of data to be received at once is specified by bufsize.
+ * Receive data from the socket. The return value is a string representing the
+ * data received. The maximum amount of data to be received at once is specified
+ * by bufsize. (For best match with hardware and network realities, the value of
+ * bufsize should be relatively small power of 2, for example, 4096.)
+ *
+ * In case of success, it returns the data received; in case of error, it
+ * returns nil with a string describing the error.
  */
 static int
 sock_recv(lua_State * L)
@@ -248,25 +423,20 @@ sock_recv(lua_State * L)
     size_t bufsize = (int)luaL_checknumber(L, 2);
     int flags = luaL_optnumber(L, 3, 0);
     char *buf = malloc(bufsize * sizeof(char));
-    for (;;) {
-        int bytes = recv(s->fd, buf, bufsize, flags);
-        if (bytes > 0) {
-            lua_pushlstring(L, buf, bytes);
-            return 1;
-        } else if (bytes == 0) {
-            lua_pushnil(L);
-            return 1;
-        } else {
-            switch (errno) {
-            case EINTR:
-            case EAGAIN:
-                continue;
-            default:
-                return luaL_error(L, "Cannot recv data, error: %s",
-                                  strerror(errno));
-            }
-        }
+    int bytes;
+    int timeout;
+    BEGIN_SELECT_LOOP(s)
+    timeout = __select(s, 0, interval);
+    if (!timeout)
+        bytes = recv(s->fd, buf, bufsize, flags);
+    if (timeout == 1) {
+        lua_pushnil(L);
+        lua_pushstring(L, "timed out");
+        return 2;
     }
+    END_SELECT_LOOP(s)
+    lua_pushlstring(L, buf, bytes);
+    return 1;
 }
 
 /**
@@ -293,17 +463,31 @@ sock_close(lua_State * L)
 /**
  * sock:settimeout(timeout)
  *
- * Set the timeout value in milliseconds for subsequent socket operations
+ * Set the timeout value in seconds for subsequent socket operations
  * (read/recv, etc).
+ *
+ * A socket object can be in one of three modes: blocking, non-blocking, or
+ * timeout. Sockets are by default always created in blocking mode.
+ *  - In blocking mode, operations block untile complete or the system returns an
+ *  error (such as connection timed out).
+ *  - In non-blocking mode, operations fail (with an error that is unfortunately
+ *  system-dependent) if they cannot be completed immediately.
+ *  - In timeout mode, operations fail if they cannot be completed within the
+ *  timeout specified for the socket or if the system returns an error. (At the
+ *  os level, sockets in timeout mode are internally set in non-blocking mode.
+ *
+ * Argument:
+ *  < 0     -- no timeout, blocking node; same as sock:setblocking(1)
+ *  = 0     -- non-blocking mode; same as sock:setblocking(0)
+ *  > 0     -- timeout mode (non-blocking mode)
  */
 static int
 sock_settimeout(lua_State * L)
 {
     struct socket *s = tolsocket(L);
-    int timeout = (int)luaL_checknumber(L, 2);
-    if (timeout > 0) {
-        s->timeout = timeout;
-    }
+    double timeout = (double)luaL_checknumber(L, 2);
+    s->sock_timeout = timeout;
+    __setblocking(s, timeout < 0.0);
     return 0;
 }
 
@@ -318,15 +502,9 @@ sock_setblocking(lua_State * L)
 {
     struct socket *s = tolsocket(L);
     int block = (int)luaL_checknumber(L, 2);
-    s->timeout = block ? -1 : 0;
+    s->sock_timeout = block ? -1 : 0;
 
-    int flags = fcntl(s->fd, F_GETFL, 0);
-    if (block) {
-        flags &= (~O_NONBLOCK);
-    } else {
-        flags |= O_NONBLOCK;
-    }
-    fcntl(s->fd, F_SETFL, flags);
+    __setblocking(s, block);
     return 0;
 }
 
@@ -378,6 +556,15 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(AI_ADDRCONFIG);
     ADD_NUM_CONST(AI_V4MAPPED);
     ADD_NUM_CONST(AI_DEFAULT);
+
+    // INADDR_* Some reserved IPv4 addresses */
+    ADD_NUM_CONST(INADDR_ANY);
+    ADD_NUM_CONST(INADDR_BROADCAST);
+    ADD_NUM_CONST(INADDR_LOOPBACK);
+    ADD_NUM_CONST(INADDR_UNSPEC_GROUP);
+    ADD_NUM_CONST(INADDR_ALLHOSTS_GROUP);
+    ADD_NUM_CONST(INADDR_MAX_LOCAL_GROUP);
+    ADD_NUM_CONST(INADDR_NONE);
 
     // Create a metatable for socket userdata.
     luaL_newmetatable(L, SOCKET_NAME);

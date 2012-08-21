@@ -18,3 +18,7 @@ Examples
     sock:settimeout(1)
     io.output():write(sock:recv(1024))
     sock:close()
+
+Unit Test
+=========
+    make test # requires lua-TestMore (https://github.com/fperrad/lua-TestMore)
