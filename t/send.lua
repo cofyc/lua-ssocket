@@ -11,14 +11,18 @@ if not ok then
 end
 
 sock:send("GET / HTTP/1.1\r\n")
-sock:send("Host: www.verycd.com\r\n")
+sock:send("Host: upload.verycd.com\r\n")
 sock:send("\r\n")
 --sock:setblocking(0)
---sock:settimeout(0.1)
+--sock:settimeout(1.101)
 --sock:settimeout(1.1)
-local data, err = sock:recv(81960)
+local s = ''
+local t = {}
+for i=1,8292*100 do t[i] = 'a' end
+s = table.concat(t)
+local data, err = sock:send(s)
 if not data then
   print(err)
 else
-  print(#data)
+  is(#s, data)
 end
