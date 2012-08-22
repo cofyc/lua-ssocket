@@ -242,6 +242,9 @@ socket_socket(lua_State * L)
     }
     struct socket *s =
         (struct socket *)lua_newuserdata(L, sizeof(struct socket));
+    if (!s) {
+        return luaL_error(L, "out of memory");
+    }
     s->fd = fd;
     s->sock_timeout = -1;
     s->sock_family = family;
@@ -425,14 +428,13 @@ sock_send(lua_State * L)
 }
 
 /**
- * data, err, partial = sock:recv(size)
+ * data, err = sock:recv(size)
  *
  * Receive data from the socket. The return value is a string representing the
  * data received. `size` specified size of data to receive, this method will not return untile it reads exactly size of data or an error occurs.
  *
  * In case of success, it returns the data received; in case of error, it
- * returns nil with a string describing the error and the partial data received
- * so far.
+ * returns nil with a string describing the error.
  */
 static int
 sock_recv(lua_State * L)
@@ -474,6 +476,70 @@ sock_recv(lua_State * L)
     return 1;
 }
 
+struct compiled_pattern {
+    struct socket *s;
+    size_t len;
+    const char *str;
+};
+
+static int
+compiled_pattern_cleanup(lua_State * L)
+{
+    struct compiled_pattern *cp;
+    cp = lua_touserdata(L, 1);
+    if (!cp)
+        return 0;
+    return 0;
+}
+
+static int
+compiled_pattern_iterator(lua_State * L)
+{
+    /*struct compiled_pattern *cp; */
+    /*cp = lua_touserdata(L, 1); */
+    /*if (!cp) */
+    /*return 0; */
+    return 0;
+}
+
+/**
+ * sock:recvuntil(pattern)
+ * 
+ * This method returns an Lua iterator function that can be called to read the
+ * data stream untils it sees the specified or an error occurs.
+ *
+ * The iterator function is like sock:recv().
+ */
+static int
+sock_recvuntil(lua_State * L)
+{
+    struct socket *s = tolsocket(L);
+    size_t len;
+    const char *str;
+    str = luaL_checklstring(L, 2, &len);
+    if (len == 0) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "pattern is empty");
+        return 2;
+    }
+    struct compiled_pattern *cp =
+        lua_newuserdata(L, sizeof(struct compiled_pattern));
+    if (!cp) {
+        return luaL_error(L, "out of memory");
+    }
+
+    lua_createtable(L, 0, 1);
+    lua_pushcfunction(L, compiled_pattern_cleanup);
+    lua_setfield(L, -2, "__gc");
+    lua_setmetatable(L, -2);
+
+    cp->s = s;
+    cp->str = str;
+    cp->len = len;
+    lua_pushcclosure(L, compiled_pattern_iterator, 1);
+    return 1;
+}
+
 /**
  * sock:close()
  *
@@ -493,6 +559,30 @@ sock_close(lua_State * L)
     }
 
     return 0;
+}
+
+/**
+ * ok, err = sock:shutdown(how)
+ *
+ * Shut down one or both halves of the connection.
+ *
+ * If how is SHUT_RD, further receives are disallowed.
+ * If how is SHUT_WR, further sends are disallowed.
+ * If how is SHUT_RDWR, further sends and receives are disallowed.
+ */
+static int
+sock_shutdown(lua_State * L)
+{
+    struct socket *s = tolsocket(L);
+    int how = luaL_checknumber(L, 2);
+    int ret = shutdown(s->fd, how);
+    if (ret < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(errno));
+        return 2;
+    }
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 /**
@@ -621,6 +711,14 @@ sock_setblocking(lua_State * L)
     return 0;
 }
 
+static int
+__sock_tostring(lua_State * L)
+{
+    struct socket *s = tolsocket(L);
+    lua_pushfstring(L, "<socket: %d>", s->fd);
+    return 1;
+}
+
 static const luaL_Reg socketlib[] = {
     {"socket", socket_socket},
     {"getaddrinfo", socket_getaddrinfo},
@@ -628,10 +726,14 @@ static const luaL_Reg socketlib[] = {
 };
 
 static const luaL_Reg sock_methods[] = {
+    {"__gc", sock_close},
+    {"__tostring", __sock_tostring},
     {"connect", sock_connect},
     {"send", sock_send},
     {"recv", sock_recv},
+    {"recvuntil", sock_recvuntil},
     {"close", sock_close},
+    {"shutdown", sock_shutdown},
     {"fileno", sock_fileno},
     {"setoption", sock_setoption},
     {"getoption", sock_getoption},
@@ -689,6 +791,11 @@ luaopen_socket_c(lua_State * L)
     // TCP_* Tcp options
     ADD_NUM_CONST(TCP_NODELAY);
     ADD_NUM_CONST(TCP_KEEPALIVE);
+
+    // SHUT_* sock:shutdown() parameters
+    ADD_NUM_CONST(SHUT_RD);
+    ADD_NUM_CONST(SHUT_WR);
+    ADD_NUM_CONST(SHUT_RDWR);
 
     // Create a metatable for socket userdata.
     luaL_newmetatable(L, SOCKET_NAME);

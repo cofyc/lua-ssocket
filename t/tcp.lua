@@ -15,6 +15,7 @@ is(bytes, 2)
 timeout = 0.1
 sock:settimeout(timeout)
 is(sock:gettimeout(), timeout)
+--local ok, err = sock:shutdown(socket.SHUT_WR)
 local ok, err = sock:recv(22)
 if not ok then
   is(err, "timed out")
