@@ -16,7 +16,7 @@ sock:send("\r\n")
 --sock:setblocking(0)
 --sock:settimeout(0.1)
 --sock:settimeout(1.1)
-local data, err = sock:recv(81960)
+local data, err = sock:recv(819600)
 if not data then
   print(err)
 else

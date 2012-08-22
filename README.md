@@ -1,9 +1,7 @@
 Lua 5.2 socket module
 =====================
 
-!!! This is my first lua c module. I wrote this only for learning purpose. It's not production ready, use http://w3.impa.br/~diego/software/luasocket/ instead.
-
-This module provide access to the BSD socket interface.
+*This is my first lua c module. I wrote this only for learning purpose. It's not production ready, use http://w3.impa.br/~diego/software/luasocket/ instead.*
 
 Examples
 ========
@@ -19,6 +17,32 @@ Examples
     io.output():write(sock:recv(1024))
     sock:close()
 
-Unit Test
-=========
-    make test # requires lua-TestMore (https://github.com/fperrad/lua-TestMore)
+Docs
+====
+    
+Socket Module
+-------------
+
+* socket.socket
+* socket.getaddrinfo
+* socket.tcp
+* socket.udp
+
+
+Socket Object
+-------------
+
+* sockobj:connect
+* sockobj:send
+* sockobj:recv
+* sockobj:close
+* sockobj:shutdown
+* sockobj:fileno
+* sockobj:setoption
+* sockobj:getoption
+* sockobj:settimeout
+* sockobj:gettimeout
+* sockobj:setblocking
+
+Contants
+--------

@@ -1,5 +1,8 @@
-design sock:recvuntil
 write sock:select?
 sock:accept
 sock:bind
 sock:listen
+
+buffer
+======
+    sock:recv, don't malloc str buf even if recv error

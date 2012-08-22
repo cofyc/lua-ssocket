@@ -476,70 +476,6 @@ sock_recv(lua_State * L)
     return 1;
 }
 
-struct compiled_pattern {
-    struct socket *s;
-    size_t len;
-    const char *str;
-};
-
-static int
-compiled_pattern_cleanup(lua_State * L)
-{
-    struct compiled_pattern *cp;
-    cp = lua_touserdata(L, 1);
-    if (!cp)
-        return 0;
-    return 0;
-}
-
-static int
-compiled_pattern_iterator(lua_State * L)
-{
-    /*struct compiled_pattern *cp; */
-    /*cp = lua_touserdata(L, 1); */
-    /*if (!cp) */
-    /*return 0; */
-    return 0;
-}
-
-/**
- * sock:recvuntil(pattern)
- * 
- * This method returns an Lua iterator function that can be called to read the
- * data stream untils it sees the specified or an error occurs.
- *
- * The iterator function is like sock:recv().
- */
-static int
-sock_recvuntil(lua_State * L)
-{
-    struct socket *s = tolsocket(L);
-    size_t len;
-    const char *str;
-    str = luaL_checklstring(L, 2, &len);
-    if (len == 0) {
-        lua_pushnil(L);
-        lua_pushliteral(L, "pattern is empty");
-        return 2;
-    }
-    struct compiled_pattern *cp =
-        lua_newuserdata(L, sizeof(struct compiled_pattern));
-    if (!cp) {
-        return luaL_error(L, "out of memory");
-    }
-
-    lua_createtable(L, 0, 1);
-    lua_pushcfunction(L, compiled_pattern_cleanup);
-    lua_setfield(L, -2, "__gc");
-    lua_setmetatable(L, -2);
-
-    cp->s = s;
-    cp->str = str;
-    cp->len = len;
-    lua_pushcclosure(L, compiled_pattern_iterator, 1);
-    return 1;
-}
-
 /**
  * sock:close()
  *
@@ -731,7 +667,6 @@ static const luaL_Reg sock_methods[] = {
     {"connect", sock_connect},
     {"send", sock_send},
     {"recv", sock_recv},
-    {"recvuntil", sock_recvuntil},
     {"close", sock_close},
     {"shutdown", sock_shutdown},
     {"fileno", sock_fileno},
