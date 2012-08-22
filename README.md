@@ -47,6 +47,57 @@ Socket Object
 Contants
 --------
 
+These constants represent the address (and protocol) families, used for the first argument to socket().
+
+* socket.AF_INET
+* socket.AF_INET6
+* socket.AF_UNIX
+
+These constants represent the socket types, used for the second argument to socket(). (Only SOCK_STREAM and SOCK_DGRAM appear to be generally useful.)
+
+* socket.SOCK_STREAM
+* socket.SOCK_RAW
+* socket.SOCK_RDM
+* socket.SOCK_SEQPACKET
+
+AI_*
+
+ * socket.AI_PASSIVE
+ * socket.AI_CANONNAME
+ * socket.AI_NUMERICHOST
+ * socket.AI_NUMERICSERV
+ * socket.AI_MASK
+ * socket.AI_ALL
+ * socket.AI_V4MAPPED_CFG
+ * socket.AI_ADDRCONFIG
+ * socket.AI_V4MAPPED
+ * socket.AI_DEFAULT
+
+INADDR_* Some reserved IPv4 addresses
+
+ * socket.INADDR_ANY
+ * socket.INADDR_BROADCAST
+ * socket.INADDR_LOOPBACK
+ * socket.INADDR_UNSPEC_GROUP
+ * socket.INADDR_ALLHOSTS_GROUP
+ * socket.INADDR_MAX_LOCAL_GROUP
+ * socket.INADDR_NONE
+
+TCP_* Tcp options
+
+ * socket.TCP_NODELAY
+ * socket.TCP_KEEPALIVE
+
+SHUT_* sock:shutdown() parameters
+
+ * socket.SHUT_RD
+ * socket.SHUT_WR
+ * socket.SHUT_RDWR
+
+Misc.
+
+* socket.SOMAXCONN
+
 References
 ==========
 
