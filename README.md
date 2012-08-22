@@ -46,3 +46,11 @@ Socket Object
 
 Contants
 --------
+
+References
+==========
+
+1. http://w3.impa.br/~diego/software/luasocket/reference.html
+2. http://golang.org/pkg/net/
+3. http://docs.python.org/py3k/library/socket.html
+4. http://www.lua.org/manual/5.2/
