@@ -3,7 +3,7 @@ require 'Test.More'
 require 'Test.Builder.Tester'
 local socket = require "socket"
 
-local addrinfo, err = socket.getaddrinfo("www.verycd.com", 80);
+local addrinfo, err = socket.getaddrinfo("yechengfu.com", 80);
 if err then
   print(err)
 else

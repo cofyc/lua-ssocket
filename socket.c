@@ -32,16 +32,11 @@ struct socket {
 };
 
 #define tolsocket(L) ((struct socket *)luaL_checkudata(L, 1, SOCKET_NAME));
-#define TIMEVAL_ADDSECONDS(tv, interval) \
-    do { \
-            tv.tv_usec += (long) ((interval - (long) interval) * 1000000); \
-            tv.tv_sec += (long) interval + (long) (tv.tv_usec / 1000000); \
-            tv.tv_usec %= 1000000; \
-    } while (0)
-#define TIMEVAL_INTERVAL(tv_start, tv_end) \
-        ((tv_end.tv_sec - tv_start.tv_sec) + \
-              (tv_end.tv_usec - tv_start.tv_usec) * 0.000001)
 #define CHECK_ERRNO(expected)   (errno == expected)
+
+/* Custom socket error strings */
+#define ERROR_TIMEOUT   "Operation timed out"
+#define ERROR_CLOSED    "Socket closed"
 
 /**
  * Function to perform the setting of socket blocking mode.
@@ -391,21 +386,59 @@ static int
 sock_connect(lua_State * L)
 {
     struct socket *s = tolsocket(L);
-    struct sockaddr sa;
+    struct sockaddr addr;
     int len;
-    int err;
-    err = __getsockaddrfromarg(L, s, &sa, &len);
+    int ret;
+    char *errstr = NULL;
 
-    err = connect(s->fd, (struct sockaddr *)&sa, len);
-    if (err < 0) {
-        err = errno;
-        lua_pushnil(L);
-        lua_pushstring(L, strerror(err));
-        return 2;
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+
+    if (!__getsockaddrfromarg(L, s, &addr, &len)) {
+        errstr = strerror(errno);
+        goto err;
+    }
+
+    errno = 0;
+    ret = connect(s->fd, (struct sockaddr *)&addr, len);
+
+    if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
+        /* Connecting in progress with timeout, wait until we have the result of
+         * the connection attempt or timeout.
+         */
+        int timeout = __waitfd(s, EVENT_ANY, &tm);
+        if (timeout == 1) {
+            errstr = ERROR_TIMEOUT;
+            goto err;
+        } else if (timeout == 0) {
+            // In case of EINPROGRESS, use getsockopt(SO_ERROR) to get the real
+            // error, when the connection attempt finished.
+            socklen_t ret_size = sizeof(ret);
+            getsockopt(s->fd, SOL_SOCKET, SO_ERROR, &ret, &ret_size);
+            if (ret == EISCONN) {
+                errno = 0;
+            } else {
+                errno = ret;
+            }
+        } else {
+            errstr = strerror(errno);
+            goto err;
+        }
+    }
+
+    if (errno) {
+        errstr = strerror(errno);
+        goto err;
     }
 
     lua_pushboolean(L, 1);
     return 1;
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return 2;
 }
 
 /**
@@ -435,7 +468,7 @@ sock_send(lua_State * L)
             errstr = strerror(errno);
             goto err;
         } else if (timeout == 1) {
-            errstr = "timed out";
+            errstr = ERROR_TIMEOUT;
             goto err;
         } else {
             size_t send_size = len - total_sent;
@@ -500,7 +533,7 @@ sock_recv(lua_State * L)
             errstr = strerror(errno);
             goto err;
         } else if (timeout == 1) {
-            errstr = "timed out";
+            errstr = ERROR_TIMEOUT;
             goto err;
         } else {
             int bytes =
@@ -512,7 +545,7 @@ sock_recv(lua_State * L)
                     break;
                 }
             } else if (bytes == 0) {
-                errstr = "closed";
+                errstr = ERROR_CLOSED;
                 goto err;
             } else {
                 switch (errno) {
@@ -810,6 +843,10 @@ luaopen_socket_c(lua_State * L)
     lua_pushnumber(L, name);  \
     lua_setfield(L, -2, # name)
 
+#define ADD_STR_CONST(name)     \
+    lua_pushstring(L, name);  \
+    lua_setfield(L, -2, # name)
+
     // These constants represent the address (and protocol) families, used for the first argument to socket().
     ADD_NUM_CONST(AF_INET);
     ADD_NUM_CONST(AF_INET6);
@@ -854,6 +891,10 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(SHUT_RD);
     ADD_NUM_CONST(SHUT_WR);
     ADD_NUM_CONST(SHUT_RDWR);
+
+    // ERROR_* some error strings, which can be used to detect errors
+    ADD_STR_CONST(ERROR_TIMEOUT);
+    ADD_STR_CONST(ERROR_CLOSED);
 
     // Create a metatable for socket userdata.
     luaL_newmetatable(L, SOCKET_NAME);

@@ -5,7 +5,7 @@ local socket = require "socket"
 plan(1)
 
 sock = socket.tcp()
-local ok, err = sock:connect("www.verycd.com", 80)
+local ok, err = sock:connect("yechengfu.com", 80)
 if err then
   print(err)
 end

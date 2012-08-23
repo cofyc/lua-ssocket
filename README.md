@@ -97,6 +97,10 @@ SHUT_* sock:shutdown() parameters
  * socket.SHUT_WR
  * socket.SHUT_RDWR
 
+ERROR_* some error strings, which can be used to detect errors
+  * socket.ERROR_TIMEOUT
+  * scoekt.ERROR_CLOSED
+
 Misc.
 
 * socket.SOMAXCONN

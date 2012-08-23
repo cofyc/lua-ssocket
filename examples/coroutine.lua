@@ -17,14 +17,14 @@ paths = {
 
 function worker(path)
   local sock = socket.tcp()
-  local ok, err = sock:connect('www.verycd.com', 80)
+  local ok, err = sock:connect('yechengfu.com', 80)
   if err then
     print(err)
     return
   end
   coroutine.yield()
   sock:send("GET " .. path .. " HTTP/1.1\r\n")
-  sock:send("Host: www.verycd.com\r\n")
+  sock:send("Host: yechengfu.com\r\n")
   sock:send("\r\n")
   local ok, err = sock:recv(1024)
   sock:close()
