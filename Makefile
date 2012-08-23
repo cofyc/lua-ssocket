@@ -10,11 +10,11 @@ all:
 	@echo "Please do 'make PLATFORM' where PLATFORM is one of these:"
 	@echo "    macosx linux"
 
-macosx: socket.c
+macosx: socket.c timeout.c
 	$(CC) -g -Wall -fno-common -dynamiclib -o socket.so $^ -llua
 
-linux: socket.c
-	$(CC) -g -Wall -fPIC --shared socket.c -o socket.so $^ -llua
+linux: socket.c timeout.c
+	$(CC) -g -Wall -fPIC --shared -o socket.so $^ -llua
 
 install:
 	$(INSTALL_DATA) socket.so $(PREFIX)/lib/lua/$(LUA_VERSION)

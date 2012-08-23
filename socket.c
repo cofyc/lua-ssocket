@@ -18,6 +18,7 @@
 #include <netinet/tcp.h>
 #include <netdb.h>
 #include <poll.h>
+#include "timeout.h"
 
 #define SOCKET_NAME     "SOCKET*"
 
@@ -70,9 +71,9 @@ __setblocking(struct socket *s, int block)
 #define EVENT_WRITABLE  POLLOUT
 #define EVENT_ANY       (POLLIN | POLLOUT)
 static int
-__select(struct socket *s, int event, double timeout)
+__waitfd(struct socket *s, int event, struct timeout *tm)
 {
-    int n;
+    int ret;
 
     // Nothing to do if we're not in timeout mode.
     if (s->sock_timeout <= 0.0)
@@ -82,68 +83,26 @@ __select(struct socket *s, int event, double timeout)
     if (s->fd < 0)
         return 0;
 
-    // Handling this condition here simplifies the select loops.
-    if (timeout < 0.0)
-        return 1;
-
     struct pollfd pollfd;
     pollfd.fd = s->fd;
     pollfd.events = event;
-    n = poll(&pollfd, 1, (int)(timeout * 1000));
-    if (n < 0)
+
+    do {
+        // Handling this condition here simplifies the loops.
+        double timeout = timeout_left(tm);
+        if (timeout <= 0)
+            return 1;
+        ret = poll(&pollfd, 1, (int)(timeout * 1e3));
+    } while (ret == -1 && CHECK_ERRNO(EINTR));
+
+    if (ret < 0) {
         return -1;
-    if (n == 0)
+    } else if (ret == 0) {
         return 1;
-    return 0;
-}
-
-/*
- * Two macros for automatic retry of `select` in case of false positives (for
- * example, select could indicate a socket is ready for reading but the data
- * then discarded by the OS because of a wrong checksum).
- *
- * Example of use:
- *  BEGIN_SELECT_LOOP(s, 0)
- *  outlen = recv(s->fd, buf, len, flags);
- *  END_SELECT_LOOP(s)
- */
-#define BEGIN_SELECT_LOOP(s, event)                         \
-    {                                                       \
-        struct timeval now, deadline = {0, 0};              \
-        double interval = s->sock_timeout;                  \
-        int has_timeout = s->sock_timeout > 0;              \
-        if (has_timeout) {                                  \
-            gettimeofday(&now, NULL);                       \
-            deadline = now;                                 \
-            TIMEVAL_ADDSECONDS(deadline, interval);         \
-            interval = TIMEVAL_INTERVAL(now, deadline); \
-        }                                                   \
-        while (1) {                                         \
-            errno = 0;                                      \
-            int timeout = __select(s, event, interval);     \
-            if (timeout == 1) {                             \
-                lua_pushnil(L);                             \
-                lua_pushstring(L, "timed out");             \
-                return 2;                                   \
-            } else if (timeout == 0) {
-
-#define END_SELECT_LOOP(s)                                  \
-            } else {                                        \
-                if (errno                                   \
-                    && !CHECK_ERRNO(EWOULDBLOCK)            \
-                    && !CHECK_ERRNO(EAGAIN)) {              \
-                    int err = errno;                        \
-                    lua_pushnil(L);                         \
-                    lua_pushstring(L, strerror(err));       \
-                    return 2;                               \
-                }                                           \
-            }                                               \
-            if (has_timeout) {                              \
-                gettimeofday(&now, NULL);                   \
-                interval = TIMEVAL_INTERVAL(now, deadline); \
-            }                                               \
-        }                                                   \
+    } else {
+        return 0;
     }
+}
 
 /**
  * Parse a socket address argument according to the socket object's address
@@ -240,9 +199,8 @@ __makesockaddr(lua_State * L, struct socket *s, struct sockaddr *addr,
         {
             struct sockaddr_in *a = (struct sockaddr_in *)addr;
             char buf[NI_MAXHOST];
-            int err =
-                getnameinfo(addr, addrlen, buf, sizeof(buf), NULL, 0,
-                            NI_NUMERICHOST);
+            int err = getnameinfo(addr, addrlen, buf, sizeof(buf), NULL, 0,
+                                  NI_NUMERICHOST);
             if (err) {
                 err = errno;
                 lua_pushnil(L);
@@ -466,37 +424,52 @@ sock_send(lua_State * L)
     struct socket *s = tolsocket(L);
     size_t len, total_sent = 0;
     const char *buf = luaL_checklstring(L, 2, &len);
-    int err = 0;
+    char *errstr;
 
-    BEGIN_SELECT_LOOP(s, EVENT_WRITABLE)
-    size_t send_size = len - total_sent;
-    if (send_size > SEND_MAXSIZE) {
-        send_size = SEND_MAXSIZE;
-    }
-    int n = send(s->fd, buf + total_sent, send_size, 0);
-    if (n < 0) {
-        switch (errno) {
-        case EAGAIN:
-        case EINTR:
-            // do nothing, continue
-            break;
-        default:
-            err = errno;
-            lua_pushnil(L);
-            lua_pushstring(L, strerror(err));
-            return 2;
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+    while (1) {
+        errno = 0;
+        int timeout = __waitfd(s, EVENT_WRITABLE, &tm);
+        if (timeout == -1) {
+            errstr = strerror(errno);
+            goto err;
+        } else if (timeout == 1) {
+            errstr = "timed out";
+            goto err;
+        } else {
+            size_t send_size = len - total_sent;
+            if (send_size > SEND_MAXSIZE) {
+                send_size = SEND_MAXSIZE;
+            }
+            int n = send(s->fd, buf + total_sent, send_size, 0);
+            if (n < 0) {
+                switch (errno) {
+                case EAGAIN:
+                    // do nothing, continue
+                    break;
+                default:
+                    goto err;
+                }
+            } else {
+                total_sent += n;
+                if (len - total_sent <= 0) {
+                    break;
+                }
+            }
         }
-    } else {
-        total_sent += n;
-        if (len - total_sent <= 0) {
-            break;
-        }
     }
-    END_SELECT_LOOP(s)
 
-        assert(total_sent == len);
+    assert(total_sent == len);
     lua_pushinteger(L, total_sent);
     return 1;
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return 2;
+
 }
 
 /**
@@ -507,7 +480,7 @@ sock_send(lua_State * L)
  * return until it reads exactly size of data or an error occurs.
  *
  * In case of success, it returns the data received; in case of error, it
- * returns nil with a string describing the error.
+ * returns the partial data received if available or empty string with a estring describing the error.
  */
 static int
 sock_recv(lua_State * L)
@@ -516,37 +489,55 @@ sock_recv(lua_State * L)
     size_t size = (int)luaL_checknumber(L, 2);
     char *buf = malloc(size * sizeof(char));
     size_t total_received = 0;
-    int err = 0;
-    BEGIN_SELECT_LOOP(s, EVENT_READABLE)
-    int bytes = recv(s->fd, buf + total_received, size - total_received, 0);
-    if (bytes > 0) {
-        total_received += bytes;
-        if (total_received == size) {
-            // finished
-            break;
-        }
-    } else if (bytes == 0) {
-        lua_pushnil(L);
-        lua_pushstring(L, "closed");
-        return 2;
-    } else {
-        switch (errno) {
-        case EWOULDBLOCK:
-        case EINTR:
-            // do nothing, continue
-            break;
-        default:
-            err = errno;
-            lua_pushnil(L);
-            lua_pushstring(L, strerror(err));
-            return 2;
+    char *errstr = NULL;
+
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+    while (1) {
+        errno = 0;
+        int timeout = __waitfd(s, EVENT_WRITABLE, &tm);
+        if (timeout == -1) {
+            errstr = strerror(errno);
+            goto err;
+        } else if (timeout == 1) {
+            errstr = "timed out";
+            goto err;
+        } else {
+            int bytes =
+                recv(s->fd, buf + total_received, size - total_received, 0);
+            if (bytes > 0) {
+                total_received += bytes;
+                if (total_received == size) {
+                    // finished
+                    break;
+                }
+            } else if (bytes == 0) {
+                errstr = "closed";
+                goto err;
+            } else {
+                switch (errno) {
+                case EAGAIN:
+                    // do nothing, continue
+                    continue;
+                default:
+                    errstr = strerror(errno);
+                    goto err;
+                }
+            }
         }
     }
-    END_SELECT_LOOP(s)
-        assert(total_received == size);
+
+    assert(total_received == size);
     lua_pushlstring(L, buf, total_received);
     free(buf);
     return 1;
+
+err:
+    assert(errstr);
+    lua_pushlstring(L, buf, total_received);
+    free(buf);
+    lua_pushstring(L, errstr);
+    return 2;
 }
 
 /**
@@ -689,7 +680,7 @@ sock_settimeout(lua_State * L)
     return 0;
 }
 
-/* 
+/*
  * sock:gettimeout()
  *
  * Returns the timeout in seconds (number) associated with socket.
