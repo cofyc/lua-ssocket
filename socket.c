@@ -503,7 +503,8 @@ sock_send(lua_State * L)
  * data, err = sock:recv(size)
  *
  * Receive data from the socket. The return value is a string representing the
- * data received. `size` specified size of data to receive, this method will not return untile it reads exactly size of data or an error occurs.
+ * data received. `size` specified size of data to receive, this method will not
+ * return until it reads exactly size of data or an error occurs.
  *
  * In case of success, it returns the data received; in case of error, it
  * returns nil with a string describing the error.

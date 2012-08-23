@@ -18,7 +18,7 @@ paths = {
 function worker(path)
   local sock = socket.tcp()
   local ok, err = sock:connect('www.verycd.com', 80)
-  if not ok then
+  if err then
     print(err)
     return
   end

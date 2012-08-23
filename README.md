@@ -8,7 +8,7 @@ Examples
 
     sock = socket.tcp()
     local ok, err = sock:connect("www.google.com", 80)
-    if not ok then
+    if err then
         print(err)
     end
     sock:send("GET / HTTP/1.1\r\n")
@@ -43,6 +43,8 @@ Socket Object
 * sock:settimeout
 * sock:gettimeout
 * sock:setblocking
+* sock:getpeername
+* sock:getsockname
 
 Contants
 --------

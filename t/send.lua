@@ -6,7 +6,7 @@ plan(1)
 
 sock = socket.tcp()
 local ok, err = sock:connect("www.verycd.com", 80)
-if not ok then
+if err then
   print(err)
 end
 
@@ -21,7 +21,7 @@ local t = {}
 for i=1,8292*100 do t[i] = 'a' end
 s = table.concat(t)
 local data, err = sock:send(s)
-if not data then
+if err then
   print(err)
 else
   is(#s, data)

@@ -5,7 +5,7 @@ local socket = require "socket"
 plan(4)
 sock = socket.tcp()
 local ok, err = sock:connect("www.verycd.com", 80)
-if not ok then
+if err then
   print(err)
 end
 
@@ -30,7 +30,7 @@ sock:settimeout(timeout)
 is(sock:gettimeout(), timeout)
 --local ok, err = sock:shutdown(socket.SHUT_WR)
 local ok, err = sock:recv(22)
-if not ok then
+if err then
   is(err, "timed out")
 else
   is(ok, "HTTP/1.1 404 Not Found")
