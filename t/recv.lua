@@ -2,7 +2,7 @@
 require 'Test.More'
 local socket = require "socket"
 
-plan(1)
+plan(2)
 
 sock = socket.tcp()
 sock:settimeout(1)
@@ -14,11 +14,7 @@ end
 sock:send("GET / HTTP/1.1\r\n")
 sock:send("Host: yechengfu.com\r\n")
 sock:send("\r\n")
-sock:settimeout(-1)
-local data, err = sock:recv(819600)
-if err then
-  print(err)
-  print(#data)
-else
-  print(#data)
-end
+sock:settimeout(3)  -- enough time
+local data, err = sock:recv(10)
+is(#data, 10)
+is(err, nil)

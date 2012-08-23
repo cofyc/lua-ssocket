@@ -36,7 +36,7 @@ struct socket {
 
 /* Custom socket error strings */
 #define ERROR_TIMEOUT   "Operation timed out"
-#define ERROR_CLOSED    "Socket closed"
+#define ERROR_CLOSED    "Connection closed"
 
 /**
  * Function to perform the setting of socket blocking mode.
@@ -478,10 +478,15 @@ sock_send(lua_State * L)
             int n = send(s->fd, buf + total_sent, send_size, 0);
             if (n < 0) {
                 switch (errno) {
+                case EINTR:
                 case EAGAIN:
-                    // do nothing, continue
-                    break;
+                    continue;
+                case EPIPE:
+                    //EPIPE means the connection was closed.
+                    errstr = ERROR_CLOSED;
+                    goto err;
                 default:
+                    errstr = strerror(errno);
                     goto err;
                 }
             } else {

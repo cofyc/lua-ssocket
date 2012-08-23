@@ -2,7 +2,7 @@
 require 'Test.More'
 local socket = require "socket"
 
-plan(1)
+plan(12)
 
 sock = socket.tcp()
 
