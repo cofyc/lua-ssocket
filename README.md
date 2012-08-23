@@ -1,7 +1,7 @@
 Lua 5.2 socket module
 =====================
 
-*This is my first lua c module. I wrote this only for learning purpose. It's not production ready, use http://w3.impa.br/~diego/software/luasocket/ instead.*
+*I wrote this only for learning purpose. It's not production ready, use http://w3.impa.br/~diego/software/luasocket/ instead.*
 
 Examples
 ========
