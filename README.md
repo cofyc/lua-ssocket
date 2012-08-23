@@ -6,6 +6,8 @@ Lua 5.2 socket module
 Examples
 ========
 
+More examples, see *examples/* folder.
+
     sock = socket.tcp()
     local ok, err = sock:connect("www.google.com", 80)
     if err then
