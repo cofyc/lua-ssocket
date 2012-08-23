@@ -6,8 +6,6 @@ Lua 5.2 socket module
 Examples
 ========
 
-More examples, see *examples/* folder.
-
     sock = socket.tcp()
     local ok, err = sock:connect("www.google.com", 80)
     if err then
@@ -18,6 +16,8 @@ More examples, see *examples/* folder.
     sock:settimeout(1)
     io.output():write(sock:recv(1024))
     sock:close()
+
+More examples, see *examples/* folder.
 
 Docs
 ====
