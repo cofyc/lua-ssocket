@@ -176,8 +176,8 @@ __select(struct socket *s, int event, double timeout)
  * This method assumed that address arguments start at argument index 2.
  */
 static int
-__getsockaddrarg(lua_State * L, struct socket *s, struct sockaddr *addr_ret,
-                 int *len_ret)
+__getsockaddrfromarg(lua_State * L, struct socket *s, struct sockaddr *addr_ret,
+                     int *len_ret)
 {
     switch (s->sock_family) {
     case AF_INET:
@@ -214,6 +214,78 @@ __getsockaddrarg(lua_State * L, struct socket *s, struct sockaddr *addr_ret,
         return 0;
     }
     return 1;
+}
+
+/**
+ * Create a table, push address info into it.
+ *
+ * The family field os the socket object is inspected to determine what kind of
+ * address it really is.
+ *
+ * In case of success, a table associated with address info pushed on the stack;
+ * in case of error, a nil value with a string describing the error pushed.
+ * Returns number of value pushed on the stack.
+ */
+static int
+__makesockaddr(lua_State * L, struct socket *s, struct sockaddr *addr,
+               socklen_t addrlen)
+{
+    lua_newtable(L);
+    if (addrlen == 0) {
+        return 1;
+    }
+
+    switch (addr->sa_family) {
+    case AF_INET:
+        {
+            struct sockaddr_in *a = (struct sockaddr_in *)addr;
+            char buf[NI_MAXHOST];
+            int err =
+                getnameinfo(addr, addrlen, buf, sizeof(buf), NULL, 0,
+                            NI_NUMERICHOST);
+            if (err) {
+                err = errno;
+                lua_pushnil(L);
+                lua_pushstring(L, gai_strerror(errno));
+                return 2;
+            }
+            lua_pushnumber(L, 1);
+            lua_pushstring(L, buf);
+            lua_settable(L, -3);
+            lua_pushnumber(L, 2);
+            lua_pushnumber(L, ntohs(a->sin_port));
+            lua_settable(L, -3);
+            return 1;
+        }
+    default:
+        lua_settop(L, 0);
+        lua_pushnil(L);
+        lua_pushstring(L, gai_strerror(errno));
+        return 2;
+    }
+}
+
+/**
+ * Get the address length according to the socket object's address family.
+ * Return 1 if the family is known, 0 otherwise. The length is returned through
+ * len_ret.
+ */
+static int
+__getsockaddrlen(struct socket *s, socklen_t * len_ret)
+{
+    switch (s->sock_family) {
+    case AF_UNIX:
+        *len_ret = sizeof(struct sockaddr_un);
+        return 1;
+    case AF_INET:
+        *len_ret = sizeof(struct sockaddr_in);
+        return 1;
+    case AF_INET6:
+        *len_ret = sizeof(struct sockaddr_in6);
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 /**
@@ -364,7 +436,7 @@ sock_connect(lua_State * L)
     struct sockaddr sa;
     int len;
     int err;
-    err = __getsockaddrarg(L, s, &sa, &len);
+    err = __getsockaddrfromarg(L, s, &sa, &len);
 
     err = connect(s->fd, (struct sockaddr *)&sa, len);
     if (err < 0) {
@@ -647,6 +719,62 @@ sock_setblocking(lua_State * L)
     return 0;
 }
 
+/**
+ * addr, err = sock:getpeername
+ *
+ * Return the address of the remote endpoint.
+ */
+static int
+sock_getpeername(lua_State * L)
+{
+    struct socket *s = tolsocket(L);
+    struct sockaddr addr;
+    socklen_t addrlen;
+    int ret = 0, err = 0;
+    if (!__getsockaddrlen(s, &addrlen)) {
+        lua_pushnil(L);
+        lua_pushstring(L, "unknown address family");
+        return 2;
+    }
+    memset(&addr, 0, addrlen);
+    ret = getpeername(s->fd, &addr, &addrlen);
+    if (ret < 0) {
+        err = errno;
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(err));
+        return 2;
+    }
+    return __makesockaddr(L, s, &addr, addrlen);
+}
+
+/**
+ * addr, err = sock:getsockname()
+ *
+ * Return the address of the local endpoint.
+ */
+static int
+sock_getsockname(lua_State * L)
+{
+    struct socket *s = tolsocket(L);
+    struct sockaddr addr;
+    socklen_t addrlen;
+    int ret = 0, err = 0;
+    if (!__getsockaddrlen(s, &addrlen)) {
+        lua_pushnil(L);
+        lua_pushstring(L, "unknown address family");
+        return 2;
+    }
+    memset(&addr, 0, addrlen);
+    ret = getsockname(s->fd, &addr, &addrlen);
+    if (ret < 0) {
+        err = errno;
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(err));
+        return 2;
+    }
+    return __makesockaddr(L, s, &addr, addrlen);
+}
+
 static int
 __sock_tostring(lua_State * L)
 {
@@ -675,6 +803,8 @@ static const luaL_Reg sock_methods[] = {
     {"settimeout", sock_settimeout},
     {"gettimeout", sock_gettimeout},
     {"setblocking", sock_setblocking},
+    {"getpeername", sock_getpeername},
+    {"getsockname", sock_getsockname},
     {NULL, NULL},
 };
 
@@ -695,6 +825,7 @@ luaopen_socket_c(lua_State * L)
 
     // These constants represent the socket types, used for the second argument to socket(). (Only SOCK_STREAM and SOCK_DGRAM appear to be generally useful.)
     ADD_NUM_CONST(SOCK_STREAM);
+    ADD_NUM_CONST(SOCK_DGRAM);
     ADD_NUM_CONST(SOCK_RAW);
     ADD_NUM_CONST(SOCK_RDM);
     ADD_NUM_CONST(SOCK_SEQPACKET);

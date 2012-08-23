@@ -1,4 +1,4 @@
-write sock:select?
+socket.select?
 sock:accept
 sock:bind
 sock:listen

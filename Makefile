@@ -31,7 +31,7 @@ clean:
 test:
 	@prove --exec=lua --timer t/*.lua
 
-ctags:
+tags:
 	find . \( -name .git -type d -prune \) -o \( -name '*.[hc]' -type f -print \) | xargs ctags -a
 
 .PHONY: all install uninstall clean test tags

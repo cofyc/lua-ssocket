@@ -32,17 +32,17 @@ Socket Module
 Socket Object
 -------------
 
-* sockobj:connect
-* sockobj:send
-* sockobj:recv
-* sockobj:close
-* sockobj:shutdown
-* sockobj:fileno
-* sockobj:setoption
-* sockobj:getoption
-* sockobj:settimeout
-* sockobj:gettimeout
-* sockobj:setblocking
+* sock:connect
+* sock:send
+* sock:recv
+* sock:close
+* sock:shutdown
+* sock:fileno
+* sock:setoption
+* sock:getoption
+* sock:settimeout
+* sock:gettimeout
+* sock:setblocking
 
 Contants
 --------
@@ -56,6 +56,7 @@ These constants represent the address (and protocol) families, used for the firs
 These constants represent the socket types, used for the second argument to socket(). (Only SOCK_STREAM and SOCK_DGRAM appear to be generally useful.)
 
 * socket.SOCK_STREAM
+* socket.SOCK_DGRAM
 * socket.SOCK_RAW
 * socket.SOCK_RDM
 * socket.SOCK_SEQPACKET

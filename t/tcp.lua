@@ -4,10 +4,23 @@ local socket = require "socket"
 
 plan(4)
 sock = socket.tcp()
-local ok, err = sock:connect("www.google.com", 80)
+local ok, err = sock:connect("www.verycd.com", 80)
 if not ok then
   print(err)
 end
+
+local addr, err = sock:getpeername()
+if err then
+  print(err)
+end
+print(table.unpack(addr))
+
+local addr, err = sock:getsockname()
+if err then
+  print(err)
+end
+print(table.unpack(addr))
+
 local bytes, err = sock:send("GET /notfound HTTP/1.1\r\n")
 is(bytes, 24)
 local bytes, err = sock:send("\r\n")
@@ -20,6 +33,6 @@ local ok, err = sock:recv(22)
 if not ok then
   is(err, "timed out")
 else
-  is(sock:recv(22), "HTTP/1.1 404 Not Found")
+  is(ok, "HTTP/1.1 404 Not Found")
 end
 sock:close()
