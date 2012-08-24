@@ -131,7 +131,7 @@ __waitfd(struct socket *s, int event, struct timeout *tm)
  */
 static int
 __getsockaddrfromarg(lua_State * L, struct socket *s, struct sockaddr *addr_ret,
-                     int *len_ret)
+                     socklen_t * len_ret)
 {
     switch (s->sock_family) {
     case AF_INET:
@@ -241,6 +241,23 @@ __getsockaddrlen(struct socket *s, socklen_t * len_ret)
     }
 }
 
+struct socket *
+__socket_create(lua_State * L, int fd, int family, int type, int protocol)
+{
+    struct socket *s =
+        (struct socket *)lua_newuserdata(L, sizeof(struct socket));
+    if (!s) {
+        return NULL;
+    }
+    s->fd = fd;
+    s->sock_timeout = -1;
+    s->sock_family = family;
+    s->sock_type = type;
+    s->sock_protocol = protocol;
+    luaL_setmetatable(L, SOCKET_NAME);
+    return s;
+}
+
 /**
  * sock, err = socket.socket(family, type[, protocol])
  *
@@ -265,17 +282,10 @@ socket_socket(lua_State * L)
         lua_pushstring(L, strerror(err));
         return 2;
     }
-    struct socket *s =
-        (struct socket *)lua_newuserdata(L, sizeof(struct socket));
+    struct socket *s = __socket_create(L, fd, family, type, protocol);
     if (!s) {
         return luaL_error(L, "out of memory");
     }
-    s->fd = fd;
-    s->sock_timeout = -1;
-    s->sock_family = family;
-    s->sock_type = type;
-    s->sock_protocol = protocol;
-    luaL_setmetatable(L, SOCKET_NAME);
     return 1;
 }
 
@@ -387,7 +397,7 @@ sock_connect(lua_State * L)
 {
     struct socket *s = tolsocket(L);
     struct sockaddr addr;
-    int len;
+    socklen_t len;
     int ret;
     char *errstr = NULL;
 
@@ -432,6 +442,132 @@ sock_connect(lua_State * L)
     }
 
     lua_pushboolean(L, 1);
+    return 1;
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return 2;
+}
+
+/**
+ *  ok, err = sock:bind(host, port)
+ *
+ *  Bind the socket to a local address.
+ */
+static int
+sock_bind(lua_State * L)
+{
+    struct socket *s = tolsocket(L);
+    struct sockaddr addr;
+    socklen_t len;
+    int ret;
+    char *errstr = NULL;
+
+    if (!__getsockaddrfromarg(L, s, &addr, &len)) {
+        errstr = strerror(errno);
+        goto err;
+    }
+
+    ret = bind(s->fd, &addr, len);
+    if (ret < 0) {
+        errstr = strerror(errno);
+        goto err;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return 2;
+}
+
+/**
+ * ok, err = sock:listen(backlog)
+ *
+ * Listen for connections make to the socket.
+ * The backlog argument specifies the maximum number of queue connections and
+ * should be at least 0.
+ */
+static int
+sock_listen(lua_State * L)
+{
+    struct socket *s = tolsocket(L);
+    int backlog;
+    int ret;
+    char *errstr = NULL;
+    backlog = luaL_checknumber(L, 2);
+    /* To avoid problems on systems that don't allow a negative backlog, force
+     * minimu value of 0. */
+    if (backlog < 0) {
+        backlog = 0;
+    }
+    ret = listen(s->fd, backlog);
+    if (ret < 0) {
+        errstr = strerror(ret);
+        goto err;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return 2;
+}
+
+/**
+ * sock, err = sock:accept()
+ *
+ * Accept a connection. The socket must be bound to an address and listening for
+ * connections.
+ *
+ * In case of success, it returns a socket object usable to read/write data on
+ * the connection. Otherwise, it returns nil and a string describing the error.
+ */
+static int
+sock_accept(lua_State * L)
+{
+    struct socket *s = tolsocket(L);
+    struct sockaddr addr;
+    socklen_t addrlen;
+    int clientfd;
+    char *errstr = NULL;
+
+    if (!__getsockaddrlen(s, &addrlen)) {
+        errstr = strerror(errno);
+        goto err;
+    }
+
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+    int timeout = __waitfd(s, EVENT_READABLE, &tm);
+    if (timeout == -1) {
+        errstr = strerror(errno);
+        goto err;
+    } else if (timeout == 1) {
+        errstr = ERROR_TIMEOUT;
+        goto err;
+    } else {
+        clientfd = accept(s->fd, &addr, &addrlen);
+        if (clientfd == -1) {
+            errstr = strerror(errno);
+            goto err;
+        }
+    }
+
+    struct socket *client =
+        __socket_create(L, clientfd, s->sock_family, s->sock_type,
+                        s->sock_protocol);
+    if (!client) {
+        return luaL_error(L, "out of memory");
+    }
     return 1;
 
 err:
@@ -507,7 +643,6 @@ err:
     lua_pushnil(L);
     lua_pushstring(L, errstr);
     return 2;
-
 }
 
 /**
@@ -818,6 +953,9 @@ static const luaL_Reg sock_methods[] = {
     {"__gc", sock_close},
     {"__tostring", __sock_tostring},
     {"connect", sock_connect},
+    {"bind", sock_bind},
+    {"listen", sock_listen},
+    {"accept", sock_accept},
     {"write", sock_write},
     {"read", sock_read},
     {"close", sock_close},

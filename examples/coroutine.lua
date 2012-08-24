@@ -1,8 +1,5 @@
 #!/usr/bin/env lua
-require 'Test.More'
 local socket = require "socket"
-
-plan(1)
 
 paths = {
   '/archives/game/00001.html',

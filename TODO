@@ -1,7 +1,4 @@
 socket.select?
-sock:accept
-sock:bind
-sock:listen
 
 buffer
 ======
