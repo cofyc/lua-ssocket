@@ -1,19 +1,13 @@
 #!/usr/bin/env lua
 local socket = require "socket"
 
-paths = {
-  '/archives/game/00001.html',
-  '/archives/game/00002.html',
-  '/archives/game/00003.html',
-  '/archives/game/00004.html',
-  '/archives/game/00005.html',
-  '/archives/game/00006.html',
-  '/archives/game/00007.html',
-  '/archives/game/00008.html',
-}
+paths = {}
 
-contents = {
-}
+for i = 1, 12 do
+  table.insert(paths, string.format('/archives/game/%05d.html', i))
+end
+
+contents = {}
 
 function worker(path)
   local sock = socket.tcp()
