@@ -29,6 +29,7 @@ clean:
 	$(RM) -r socket.so.dSYM
 
 test:
+	@ git submodule update --init --recursive
 	@LUA_PATH="./lua-TestMore/src/?.lua;./?.lua" prove --exec=lua --timer t/*.lua
 
 tags:
