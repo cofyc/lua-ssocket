@@ -754,7 +754,7 @@ sock_shutdown(lua_State * L)
 }
 
 /**
- * sock:fileno()
+ * fd = sock:fileno()
  *
  * Return the integer file descriptor of the socket.
  */
@@ -794,7 +794,7 @@ sock_setoption(lua_State * L)
 }
 
 /**
- * value, err = sock:getopt(level, option)
+ * value, err = sock:getopt(level, optname)
  *
  * Get a socket option. See the Unix manual for level and option.
  */
@@ -849,7 +849,7 @@ sock_settimeout(lua_State * L)
 }
 
 /*
- * sock:gettimeout()
+ * timeout = sock:gettimeout()
  *
  * Returns the timeout in seconds (number) associated with socket.
  * A negative timeout indicates that timeout is disabled.

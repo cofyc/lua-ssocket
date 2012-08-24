@@ -21,7 +21,7 @@ More examples, see *examples/* folder.
 
 Docs
 ====
-    
+
 Socket Module
 -------------
 
@@ -30,32 +30,86 @@ Socket Module
     `sock, err = socket.socket(family, type[, protocol])`
 
 * socket.getaddrinfo
+
     `addrinfos, err = socket.getaddrinfo(host, port[, family=0[, socktype=0[, protocol=0[, flags=0]]]])`
 
 * socket.tcp
 
+    `sock, err = socket.tcp()`
+
 * socket.udp
+
+    `sock, err = socket.udp()`
 
 
 Socket Object
 -------------
 
 * sock:connect
+
+    `ok, err = sock:connect(host, port)`
+    `ok, err = sock:connect(unix_socket_path)`
+
 * sock:bind
+
+    `ok, err = sock:bind(host, port)`
+    `ok, err = sock:bind(unix_socket_path)`
+
 * sock:listen
+
+    `ok, err = sock:listen(backlog)`
+
 * sock:accept
+
+    `sock, err = sock:accept()`
+
 * sock:write
+
+    `bytes, err = sock:write(data)`
+
 * sock:read
+
+    `data, err = sock:read(maxsize)`
+
 * sock:close
+
+    `sock:close()`
+
 * sock:shutdown
+
+    `ok, err = sock:shutdown(how)`
+
 * sock:fileno
+
+    `fd = sock:fileno()`
+
 * sock:setoption
+
+    `ok, err = sock:setoption(level, optname, value)`
+
 * sock:getoption
+
+    `value, err = sock:getoption(level, optname)`
+
 * sock:settimeout
+
+    `sock:settimeout(timeout)`
+
 * sock:gettimeout
+
+    `timeout = sock:gettimeout()`
+
 * sock:setblocking
+    
+    `sock:setblocking(block)`
+
 * sock:getpeername
+
+    `addr, err = sock:getpeername()`
+
 * sock:getsockname
+
+    `addr, err = sock:getsockname()`
 
 Contants
 --------
