@@ -26,8 +26,14 @@ Socket Module
 -------------
 
 * socket.socket
+
+    `sock, err = socket.socket(family, type[, protocol])`
+
 * socket.getaddrinfo
+    `addrinfos, err = socket.getaddrinfo(host, port[, family=0[, socktype=0[, protocol=0[, flags=0]]]])`
+
 * socket.tcp
+
 * socket.udp
 
 
@@ -35,6 +41,9 @@ Socket Object
 -------------
 
 * sock:connect
+* sock:bind
+* sock:listen
+* sock:accept
 * sock:write
 * sock:read
 * sock:close
