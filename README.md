@@ -11,10 +11,10 @@ Examples
     if err then
         print(err)
     end
-    sock:send("GET / HTTP/1.1\r\n")
-    sock:send("\r\n")
+    sock:write("GET / HTTP/1.1\r\n")
+    sock:write("\r\n")
     sock:settimeout(1)
-    io.output():write(sock:recv(1024))
+    io.output():write(sock:read(1024))
     sock:close()
 
 More examples, see *examples/* folder.
@@ -35,8 +35,8 @@ Socket Object
 -------------
 
 * sock:connect
-* sock:send
-* sock:recv
+* sock:write
+* sock:read
 * sock:close
 * sock:shutdown
 * sock:fileno

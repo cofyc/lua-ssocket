@@ -442,7 +442,7 @@ err:
 }
 
 /**
- * bytes, err = sock:send(data)
+ * bytes, err = sock:write(data)
  *
  * This method is a synchronous operation that will not return until all the dat
  * a has been flushed into the system socket send buffer or an error occurs.
@@ -452,7 +452,7 @@ err:
  */
 #define SEND_MAXSIZE 8192
 static int
-sock_send(lua_State * L)
+sock_write(lua_State * L)
 {
     struct socket *s = tolsocket(L);
     size_t len, total_sent = 0;
@@ -511,17 +511,16 @@ err:
 }
 
 /**
- * data, err = sock:recv(size)
+ * data, err = sock:read(maxsize)
  *
  * Receive data from the socket. The return value is a string representing the
- * data received. `size` specified size of data to receive, this method will not
- * return until it reads exactly size of data or an error occurs.
+ * data received. `size` specified max size of data to receive.
  *
  * In case of success, it returns the data received; in case of error, it
- * returns the partial data received if available or empty string with a estring describing the error.
+ * returns the data received if available or empty string and a string describing the error.
  */
 static int
-sock_recv(lua_State * L)
+sock_read(lua_State * L)
 {
     struct socket *s = tolsocket(L);
     size_t size = (int)luaL_checknumber(L, 2);
@@ -545,10 +544,7 @@ sock_recv(lua_State * L)
                 recv(s->fd, buf + total_received, size - total_received, 0);
             if (bytes > 0) {
                 total_received += bytes;
-                if (total_received == size) {
-                    // finished
-                    break;
-                }
+                break;
             } else if (bytes == 0) {
                 errstr = ERROR_CLOSED;
                 goto err;
@@ -565,7 +561,6 @@ sock_recv(lua_State * L)
         }
     }
 
-    assert(total_received == size);
     lua_pushlstring(L, buf, total_received);
     free(buf);
     return 1;
@@ -823,8 +818,8 @@ static const luaL_Reg sock_methods[] = {
     {"__gc", sock_close},
     {"__tostring", __sock_tostring},
     {"connect", sock_connect},
-    {"send", sock_send},
-    {"recv", sock_recv},
+    {"write", sock_write},
+    {"read", sock_read},
     {"close", sock_close},
     {"shutdown", sock_shutdown},
     {"fileno", sock_fileno},

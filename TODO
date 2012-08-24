@@ -5,4 +5,12 @@ sock:listen
 
 buffer
 ======
-    sock:recv, don't malloc str buf even if recv error
+    sock:read, don't malloc str buf even if recv error
+
+Buffered IO
+===========
+    sock:readbyte
+    sock:readstring
+    sock:readline
+    sock:writebyte
+    sock:writestring

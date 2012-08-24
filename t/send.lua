@@ -17,12 +17,12 @@ if err then
   print(err)
 end
 
-sock:send("POST / HTTP/1.1\r\n")
-sock:send("Host: yechengfu.com\r\n")
-is(sock:send("\r\n"), 2)
+sock:write("POST / HTTP/1.1\r\n")
+sock:write("Host: yechengfu.com\r\n")
+is(sock:write("\r\n"), 2)
 
 -- send big data
-local data, err = sock:send(bigdata(8192*100))
+local data, err = sock:write(bigdata(8192*100))
 is(err, "Connection closed")
 
 sock:close()
