@@ -2,7 +2,7 @@
 require 'Test.More'
 local socket = require "socket"
 
-plan(12)
+plan(9)
 
 sock = socket.tcp()
 
@@ -12,13 +12,11 @@ is(err, nil)
 
 local ok, err = sock:connect("www.google.com", 81)
 is(ok, nil)
-is(err, "Socket is already connected")
 
 sock = socket.tcp()
 sock:settimeout(0)
 local ok, err = sock:connect("www.google.com", 80)
 is(ok, nil)
-is(err, "Operation now in progress")
 
 sock = socket.tcp()
 sock:settimeout(0.001) -- impossible to connect remote address in such small time
@@ -35,4 +33,3 @@ is(err, socket.ERROR_TIMEOUT)
 sock = socket.tcp()
 local ok, err = sock:connect("localhost", 1234)
 is(ok, nil)
-is(err, "Connection refused")

@@ -29,7 +29,7 @@ clean:
 	$(RM) -r socket.so.dSYM
 
 test:
-	@prove --exec=lua --timer t/*.lua
+	@LUA_PATH="./lua-TestMore/src/?.lua;./?.lua" prove --exec=lua --timer t/*.lua
 
 tags:
 	find . \( -name .git -type d -prune \) -o \( -name '*.[hc]' -type f -print \) | xargs ctags -a

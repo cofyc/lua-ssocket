@@ -9,15 +9,16 @@
 
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/time.h>
 #include <sys/types.h>
-#include <sys/un.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/un.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netdb.h>
 #include <poll.h>
+#include <signal.h>
 #include "timeout.h"
 
 #define SOCKET_NAME     "SOCKET*"
@@ -618,7 +619,7 @@ sock_write(lua_State * L)
                 case EAGAIN:
                     continue;
                 case EPIPE:
-                    //EPIPE means the connection was closed.
+                    // EPIPE means the connection was closed.
                     errstr = ERROR_CLOSED;
                     goto err;
                 default:
@@ -1001,16 +1002,8 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(SOMAXCONN);
 
     // AI_*
-    ADD_NUM_CONST(AI_PASSIVE);
-    ADD_NUM_CONST(AI_CANONNAME);
     ADD_NUM_CONST(AI_NUMERICHOST);
     ADD_NUM_CONST(AI_NUMERICSERV);
-    ADD_NUM_CONST(AI_MASK);
-    ADD_NUM_CONST(AI_ALL);
-    ADD_NUM_CONST(AI_V4MAPPED_CFG);
-    ADD_NUM_CONST(AI_ADDRCONFIG);
-    ADD_NUM_CONST(AI_V4MAPPED);
-    ADD_NUM_CONST(AI_DEFAULT);
 
     // INADDR_* Some reserved IPv4 addresses
     ADD_NUM_CONST(INADDR_ANY);
@@ -1022,8 +1015,8 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(INADDR_NONE);
 
     // TCP_* Tcp options
-    ADD_NUM_CONST(TCP_NODELAY);
-    ADD_NUM_CONST(TCP_KEEPALIVE);
+    //ADD_NUM_CONST(TCP_NODELAY);
+    //ADD_NUM_CONST(TCP_KEEPALIVE);
 
     // SHUT_* sock:shutdown() parameters
     ADD_NUM_CONST(SHUT_RD);

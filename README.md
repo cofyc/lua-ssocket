@@ -130,16 +130,8 @@ These constants represent the socket types, used for the second argument to sock
 
 AI_*
 
- * socket.AI_PASSIVE
- * socket.AI_CANONNAME
  * socket.AI_NUMERICHOST
  * socket.AI_NUMERICSERV
- * socket.AI_MASK
- * socket.AI_ALL
- * socket.AI_V4MAPPED_CFG
- * socket.AI_ADDRCONFIG
- * socket.AI_V4MAPPED
- * socket.AI_DEFAULT
 
 INADDR_* Some reserved IPv4 addresses
 
@@ -150,11 +142,6 @@ INADDR_* Some reserved IPv4 addresses
  * socket.INADDR_ALLHOSTS_GROUP
  * socket.INADDR_MAX_LOCAL_GROUP
  * socket.INADDR_NONE
-
-TCP_* Tcp options
-
- * socket.TCP_NODELAY
- * socket.TCP_KEEPALIVE
 
 SHUT_* sock:shutdown() parameters
 
@@ -177,3 +164,4 @@ References
 2. http://golang.org/pkg/net/
 3. http://docs.python.org/py3k/library/socket.html
 4. http://www.lua.org/manual/5.2/
+5. https://github.com/fperrad/lua-TestMore.git
