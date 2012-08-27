@@ -5,7 +5,6 @@ local socket = require "socket"
 plan(2)
 
 sock = socket.tcp()
-sock:settimeout(1)
 local ok, err = sock:connect("google.com", 80)
 if err then
   fail("connect err: " .. err)

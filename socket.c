@@ -30,6 +30,7 @@ struct socket {
     int sock_type;
     int sock_protocol;
     double sock_timeout;        /* in seconds */
+    /* For buffer reading */
 };
 
 #define tolsocket(L) ((struct socket *)luaL_checkudata(L, 1, SOCKET_NAME));
@@ -1139,6 +1140,23 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(SHUT_RD);
     ADD_NUM_CONST(SHUT_WR);
     ADD_NUM_CONST(SHUT_RDWR);
+
+    // SOL_ * protocol level and numbers
+    ADD_NUM_CONST(SOL_SOCKET);
+
+    // SO_* 
+#ifdef SO_REUSEADDR
+    ADD_NUM_CONST(SO_REUSEADDR);
+#endif
+#ifdef SO_KEEPALIVE
+    ADD_NUM_CONST(SO_KEEPALIVE);
+#endif
+#ifdef SO_RCVBUF
+    ADD_NUM_CONST(SO_RCVBUF);
+#endif
+#ifdef SO_SNDBUF
+    ADD_NUM_CONST(SO_SNDBUF);
+#endif
 
     // ERROR_* some error strings, which can be used to detect errors
     ADD_STR_CONST(ERROR_TIMEOUT);

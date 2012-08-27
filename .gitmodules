@@ -1,0 +1,3 @@
+[submodule "dstring"]
+	path = dstring
+	url = git@github.com:Cofyc/dstring.git

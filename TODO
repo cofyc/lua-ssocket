@@ -1,11 +1,12 @@
-buffer
-======
-    sock:read, don't malloc str buf even if recv error
-
-Buffered IO
-===========
-    sock:readbyte
-    sock:readstring
-    sock:readline
-    sock:writebyte
-    sock:writestring
+str, err = sock:read
+c, err = sock:readbyte()
+    Reads and returns a single byte.
+str, err = sock:readstring(delim)
+    Reads untile the first occurrence of delim in the input, returning a
+    string containing the data up to and including the delimiter. If readstring
+    encounters an error before finding an delimiter, it returns the data read
+    before the error and the error itself.
+str, err = sock:readline
+    Return a single line, not including the end-of-line bytes.
+err = sock:unreadbyte
+    Unreadbyte unreads the last byte.
