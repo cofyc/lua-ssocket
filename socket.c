@@ -777,9 +777,11 @@ sock_read(lua_State * L)
 {
     struct socket *s = tolsocket(L);
     size_t size = (int)luaL_checknumber(L, 2);
-    char *buf = malloc(size * sizeof(char));
-    size_t total_received = 0;
+    int bytes_read = 0;
     char *errstr = NULL;
+
+    luaL_Buffer buf;
+    char *pbuf = luaL_buffinitsize(L, &buf, size);
 
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
@@ -793,12 +795,10 @@ sock_read(lua_State * L)
             errstr = ERROR_TIMEOUT;
             goto err;
         } else {
-            int bytes =
-                recv(s->fd, buf + total_received, size - total_received, 0);
-            if (bytes > 0) {
-                total_received += bytes;
+            bytes_read = recv(s->fd, pbuf, size, 0);
+            if (bytes_read > 0) {
                 break;
-            } else if (bytes == 0) {
+            } else if (bytes_read == 0) {
                 errstr = ERROR_CLOSED;
                 goto err;
             } else {
@@ -814,14 +814,12 @@ sock_read(lua_State * L)
         }
     }
 
-    lua_pushlstring(L, buf, total_received);
-    free(buf);
+    luaL_pushresultsize(&buf, bytes_read);
     return 1;
 
 err:
     assert(errstr);
-    lua_pushlstring(L, buf, total_received);
-    free(buf);
+    luaL_pushresultsize(&buf, bytes_read);
     lua_pushstring(L, errstr);
     return 2;
 }
