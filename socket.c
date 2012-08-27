@@ -100,6 +100,24 @@ __waitfd(struct socket *s, int event, struct timeout *tm)
     }
 }
 
+int
+__select(int nfds, fd_set * readfds, fd_set * writefds, fd_set * errorfds,
+         struct timeout *tm)
+{
+    int ret;
+    do {
+        struct timeval tv = { 0, 0 };
+        double t = timeout_left(tm);
+        if (t >= 0) {
+            tv.tv_sec = (int)t;
+            tv.tv_usec = (int)((t - tv.tv_sec) * 1.0e6);
+        }
+
+        ret = select(nfds, readfds, writefds, errorfds, (t >= 0) ? &tv : NULL);
+    } while (ret < 0 && errno == EINTR);
+    return ret;
+}
+
 /**
  * Parse a socket address argument according to the socket object's address
  * family.
@@ -288,6 +306,104 @@ socket_socket(lua_State * L)
         return luaL_error(L, "out of memory");
     }
     return 1;
+}
+
+static void
+__collect_fds(lua_State * L, int tab, fd_set * set, int *max_fd)
+{
+    if (lua_isnil(L, tab))
+        return;
+
+    luaL_checktype(L, tab, LUA_TTABLE);
+
+    int i = 1;
+    while (1) {
+        int fd = -1;
+        lua_pushnumber(L, i);
+        lua_gettable(L, tab);   // get ith fd
+
+        if (lua_isnil(L, -1)) {
+            // end of table loop
+            lua_pop(L, 1);
+            break;
+        }
+
+        if (lua_isnumber(L, -1)) {
+            fd = lua_tonumber(L, -1);
+            if (fd < 0) {
+                fd = -1;
+            }
+        } else {
+            // ignore
+            lua_pop(L, 1);
+            continue;
+        }
+
+        if (fd != -1) {
+            if (fd >= FD_SETSIZE) {
+                luaL_argerror(L, tab, "descriptor too large for set size");
+            }
+            if (*max_fd < fd) {
+                *max_fd = fd;
+            }
+            FD_SET(fd, set);
+        }
+
+        lua_pop(L, 1);
+        i++;
+    }
+}
+
+static void
+__return_fd(lua_State * L, fd_set * set, int max_fd)
+{
+    int fd;
+    int i = 1;
+    lua_newtable(L);
+    for (fd = 0; fd < max_fd; fd++) {
+        if (FD_ISSET(fd, set)) {
+            lua_pushnumber(L, i);
+            lua_pushnumber(L, fd);
+            lua_settable(L, -3);
+        }
+    }
+}
+
+/**
+ * readfds, writefds, err = socket.select(readfds, writefds[, timeout=-1])
+ *
+ *  `readfds`, `writefds` are all table of fds (which was returned from
+ *  sock:fileno()).
+ */
+static int
+socket_select(lua_State * L)
+{
+    int max_fd = -1;
+    fd_set rset, wset;
+    struct timeout tm;
+    double timeout = luaL_optnumber(L, 3, -1);
+    timeout_init(&tm, timeout);
+    FD_ZERO(&rset);
+    FD_ZERO(&wset);
+    __collect_fds(L, 1, &rset, &max_fd);
+    __collect_fds(L, 2, &wset, &max_fd);
+
+    int ret = __select(max_fd + 1, &rset, &wset, NULL, &tm);
+    if (ret > 0) {
+        __return_fd(L, &rset, max_fd + 1);
+        __return_fd(L, &wset, max_fd + 1);
+        return 2;
+    } else if (ret == 0) {
+        lua_pushnil(L);
+        lua_pushnil(L);
+        lua_pushstring(L, ERROR_TIMEOUT);
+        return 3;
+    } else {
+        lua_pushnil(L);
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(errno));
+        return 3;
+    }
 }
 
 /**
@@ -946,6 +1062,7 @@ __sock_tostring(lua_State * L)
 
 static const luaL_Reg socketlib[] = {
     {"socket", socket_socket},
+    {"select", socket_select},
     {"getaddrinfo", socket_getaddrinfo},
     {NULL, NULL},
 };

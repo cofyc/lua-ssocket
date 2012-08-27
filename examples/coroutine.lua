@@ -1,16 +1,15 @@
 #!/usr/bin/env lua
 local socket = require "socket"
 
-paths = {}
+local paths = {}
+local contents = {}
 
-for i = 1, 12 do
-  table.insert(paths, string.format('/archives/game/%05d.html', i))
+for i = 1, 20 do
+  local path = string.format('/archives/game/%05d.html', i)
+  table.insert(paths, path)
 end
 
-contents = {}
-
-function worker(path)
-  local sock = socket.tcp()
+function worker(sock, path)
   local ok, err = sock:connect('www.verycd.com', 80)
   if err then
     print(path .. " failed")
@@ -20,6 +19,7 @@ function worker(path)
   sock:write("GET " .. path .. " HTTP/1.1\r\n")
   sock:write("Host: www.verycd.com\r\n")
   sock:write("\r\n")
+  coroutine.yield(true)
   while true do
     local data, err = sock:read(8192)
     if contents[path] == nil then
@@ -33,7 +33,7 @@ function worker(path)
       end
       break
     end
-    coroutine.yield(#data)
+    coroutine.yield(true)
   end
   coroutine.yield(nil)
 end
@@ -68,27 +68,43 @@ if arg[1] == "sequence" then
       end
     end
 else
+    print("selecting...")
     local threads = {}
 
     for i, path in ipairs(paths) do
-      local thread = coroutine.create(function () worker(path) end)
-      table.insert(threads, thread)
+      local sock = socket.tcp()
+      local thread = coroutine.create(function () worker(sock, path) end)
+      coroutine.resume(thread) -- initialize
+      threads[sock:fileno()] = thread
     end
 
     while true do
-      if 0 == #threads then
-        -- no threads
+      local fds = {}
+      for fd, _ in pairs(threads) do
+        table.insert(fds, fd)
+      end
+
+      if 0 == #fds then
+        -- no more to do
         break
       end
-      for i, thread in ipairs(threads) do
-        local status, result = coroutine.resume(thread)
-        if result == nil then
-          table.remove(threads, i)
+
+      local readfds, writefds, err = socket.select(fds, fds)
+
+      if err then
+        print(err)
+        os.exit()
+      elseif readfds then
+        for _, fd in ipairs(readfds) do
+          local status, result = coroutine.resume(threads[fd])
+          if result == nil then
+            threads[fd] = nil
+          end
         end
       end
     end
 end
 
-for path, content in pairs(contents) do
-  print(path, #content)
+for _, path in ipairs(paths) do
+  print(path, #contents[path])
 end

@@ -1,5 +1,3 @@
-socket.select?
-
 buffer
 ======
     sock:read, don't malloc str buf even if recv error
