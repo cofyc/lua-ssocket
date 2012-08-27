@@ -1,0 +1,4 @@
+- sock:readline
+    Reads a line from the socket. The line is terminated by a LF character,
+    optionally preceded by a CR character. The CR and LF characters are not
+    included in the returned line.
