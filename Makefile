@@ -6,15 +6,18 @@ INSTALL_EXEC = $(INSTALL) -m 0755
 INSTALL_DATA = $(INSTALL) -m 0644
 LUA_VERSION = 5.2
 
-all:
-	@echo "Please do 'make PLATFORM' where PLATFORM is one of these:"
-	@echo "    macosx linux"
+uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
-macosx: socket.c timeout.c
-	$(CC) -g -Wall -fno-common -dynamiclib -o socket.so $^ -llua
+ifeq ($(uname_S), Darwin)
+	SHARELIB_FLAGS = -fPIC -dynamiclib -Wl,-undefined,dynamic_lookup
+else
+	SHARELIB_FLAGS = -fPIC --shared
+endif
 
-linux: socket.c timeout.c
-	$(CC) -g -Wall -fPIC --shared -o socket.so $^ -llua
+all: socket.so
+
+socket.so: socket.c timeout.c
+	$(CC) -g -Wall $(SHARELIB_FLAGS) -o socket.so $^
 
 install:
 	$(INSTALL_DATA) socket.so $(PREFIX)/lib/lua/$(LUA_VERSION)
