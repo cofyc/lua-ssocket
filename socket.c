@@ -787,7 +787,7 @@ sock_read(lua_State * L)
     timeout_init(&tm, s->sock_timeout);
     while (1) {
         errno = 0;
-        int timeout = __waitfd(s, EVENT_WRITABLE, &tm);
+        int timeout = __waitfd(s, EVENT_READABLE, &tm);
         if (timeout == -1) {
             errstr = strerror(errno);
             goto err;
@@ -820,6 +820,44 @@ sock_read(lua_State * L)
 err:
     assert(errstr);
     luaL_pushresultsize(&buf, bytes_read);
+    lua_pushstring(L, errstr);
+    return 2;
+}
+
+/**
+ * sock:readline()
+ *
+ * Reads a line from the socket. The line is terminated by a LF character,
+ * optionally preceded by a CR character. The CR and LF characters are not
+ * included in the returned line.
+ */
+static int
+sock_readline(lua_State *L)
+{
+    struct socket *s = tolsocket(L);
+    char *errstr = NULL;
+
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+    while (1) {
+        errno = 0;
+        int timeout = __waitfd(s, EVENT_READABLE, &tm);
+        if (timeout == -1) {
+            errstr = strerror(errno);
+            goto err;
+        } else if (timeout == 1) {
+            errstr = ERROR_TIMEOUT;
+            goto err;
+        } else {
+
+        }
+    }
+
+    return 1;
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
     lua_pushstring(L, errstr);
     return 2;
 }
@@ -1114,9 +1152,6 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(SOCK_RDM);
     ADD_NUM_CONST(SOCK_SEQPACKET);
 
-    // socket.SOMAXCONN
-    ADD_NUM_CONST(SOMAXCONN);
-
     // AI_*
     ADD_NUM_CONST(AI_NUMERICHOST);
     ADD_NUM_CONST(AI_NUMERICSERV);
@@ -1138,23 +1173,6 @@ luaopen_socket_c(lua_State * L)
     ADD_NUM_CONST(SHUT_RD);
     ADD_NUM_CONST(SHUT_WR);
     ADD_NUM_CONST(SHUT_RDWR);
-
-    // SOL_ * protocol level and numbers
-    ADD_NUM_CONST(SOL_SOCKET);
-
-    // SO_* 
-#ifdef SO_REUSEADDR
-    ADD_NUM_CONST(SO_REUSEADDR);
-#endif
-#ifdef SO_KEEPALIVE
-    ADD_NUM_CONST(SO_KEEPALIVE);
-#endif
-#ifdef SO_RCVBUF
-    ADD_NUM_CONST(SO_RCVBUF);
-#endif
-#ifdef SO_SNDBUF
-    ADD_NUM_CONST(SO_SNDBUF);
-#endif
 
     // ERROR_* some error strings, which can be used to detect errors
     ADD_STR_CONST(ERROR_TIMEOUT);

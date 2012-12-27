@@ -153,22 +153,10 @@ SHUT_* sock:shutdown() parameters
  * socket.SHUT_WR
  * socket.SHUT_RDWR
 
-SOL_* protocol level and numbers
-  * SOL_SOCKET
-
-SO_* 
-  * SO_REUSEADDR
-  * SO_KEEPALIVE
-  * SO_RCVBUF
-  * SO_SNDBUF
-
 ERROR_* some error strings, which can be used to detect errors
+
   * socket.ERROR_TIMEOUT
   * scoekt.ERROR_CLOSED
-
-Misc.
-
-* socket.SOMAXCONN
 
 References
 ==========
