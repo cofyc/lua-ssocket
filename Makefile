@@ -5,6 +5,7 @@ INSTALL = install -p
 INSTALL_EXEC = $(INSTALL) -m 0755
 INSTALL_DATA = $(INSTALL) -m 0644
 LUA_VERSION = 5.2
+CFLAGS = -Wall -O2 -g -std=c99 -pedantic
 
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
@@ -16,10 +17,10 @@ endif
 
 all: socket.so
 
-socket.so: socket.c timeout.c
-	$(CC) -g -Wall $(SHARELIB_FLAGS) -o socket.so $^
+socket.so: socket.c timeout.c buffer.c
+	$(CC) $(CFLAGS) $(SHARELIB_FLAGS) -o socket.so $^
 
-install:
+install: all
 	$(INSTALL_DATA) socket.so $(PREFIX)/lib/lua/$(LUA_VERSION)
 	$(INSTALL_DATA) socket.lua $(PREFIX)/lib/lua/$(LUA_VERSION)
 
@@ -31,7 +32,7 @@ clean:
 	$(RM) socket.so
 	$(RM) -r socket.so.dSYM
 
-test:
+test: all
 	@prove --exec=lua --timer t/*.lua
 
 tags:

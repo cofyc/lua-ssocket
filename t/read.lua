@@ -1,4 +1,3 @@
-#!/usr/bin/env lua
 require 'Test.More'
 local socket = require "socket"
 

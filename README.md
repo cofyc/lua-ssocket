@@ -75,6 +75,32 @@ Socket Object
 
     `data, err = sock:read(maxsize)`
 
+* sock:readuntil
+
+    `iterator = sock:readuntil(pattern, inclusive?)`
+
+    This method returns an iterator function that can be called to read the data
+    stream until it sees the specified pattern or an error occurs.
+
+    It also takes an optional inclusive argument to control whether to include
+    the pattern string in the returned data string. Default to false.
+
+    For example:
+
+        local reader = sock:readuntil("\r\n")
+        while true do
+            local data, err, partial = reader()
+            if data then
+                printf("line: " .. data)
+            end
+        end
+    
+    This iterator function returns the received data right before the specified
+    pattern string in the incoming data stream.
+
+    In case of error, it will return nil along with a string describing the
+    error and the partial data bytes that have been read so far.
+
 * sock:close
 
     `sock:close()`

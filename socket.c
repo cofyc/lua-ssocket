@@ -20,6 +20,7 @@
 #include <poll.h>
 #include <signal.h>
 #include "timeout.h"
+#include "buffer.h"
 
 #define SOCKET_NAME     "SOCKET*"
 
@@ -30,7 +31,7 @@ struct socket {
     int sock_type;
     int sock_protocol;
     double sock_timeout;        /* in seconds */
-    /* For buffer reading */
+    struct buffer *buf;         /* used for buffer reading */
 };
 
 #define tolsocket(L) ((struct socket *)luaL_checkudata(L, 1, SOCKET_NAME));
@@ -39,6 +40,10 @@ struct socket {
 /* Custom socket error strings */
 #define ERROR_TIMEOUT   "Operation timed out"
 #define ERROR_CLOSED    "Connection closed"
+
+/* Default BUFSIZE */
+#define SEND_BUFSIZE 4096
+#define RECV_BUFSIZE 4096
 
 /**
  * Function to perform the setting of socket blocking mode.
@@ -274,6 +279,7 @@ __socket_create(lua_State * L, int fd, int family, int type, int protocol)
     s->sock_family = family;
     s->sock_type = type;
     s->sock_protocol = protocol;
+    s->buf = NULL;
     luaL_setmetatable(L, SOCKET_NAME);
     return s;
 }
@@ -698,13 +704,12 @@ err:
 /**
  * bytes, err = sock:write(data)
  *
- * This method is a synchronous operation that will not return until all the dat
- * a has been flushed into the system socket send buffer or an error occurs.
+ * This method is a synchronous operation that will not return until all the
+ * data has been flushed into the system socket send buffer or an error occurs.
  *
  * In case of success, it returns the total number of bytes that have been sent.
  * Otherwise, it returns nil and a string describing the error.
  */
-#define SEND_MAXSIZE 8192
 static int
 sock_write(lua_State * L)
 {
@@ -726,8 +731,8 @@ sock_write(lua_State * L)
             goto err;
         } else {
             size_t send_size = len - total_sent;
-            if (send_size > SEND_MAXSIZE) {
-                send_size = SEND_MAXSIZE;
+            if (send_size > SEND_BUFSIZE) {
+                send_size = SEND_BUFSIZE;
             }
             int n = send(s->fd, buf + total_sent, send_size, 0);
             if (n < 0) {
@@ -824,21 +829,61 @@ err:
     return 2;
 }
 
-/**
- * sock:readline()
- *
- * Reads a line from the socket. The line is terminated by a LF character,
- * optionally preceded by a CR character. The CR and LF characters are not
- * included in the returned line.
- */
 static int
-sock_readline(lua_State *L)
+sock_readuntil_iterator(lua_State *L)
 {
-    struct socket *s = tolsocket(L);
+    struct socket *s = lua_touserdata(L, lua_upvalueindex(1));
     char *errstr = NULL;
+    size_t len;
+    const char *pattern = lua_tolstring(L, lua_upvalueindex(2), &len);
+    int state = lua_tointeger(L, lua_upvalueindex(4));
+    int inclusive = lua_toboolean(L, lua_upvalueindex(3));
+
+    if (s->buf == NULL) {
+        s->buf = buffer_create(RECV_BUFSIZE);
+    }
+    struct buffer *buf = s->buf;
 
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
+
+search:
+    do {
+        int i = 0;
+        int bytes = buffer_size(buf);
+        if (bytes == 0) {
+            break;
+        }
+        while (i < bytes) {
+            char c = buf->pos[i];
+
+            if (c == pattern[state]) {
+                i++;
+                state++;
+                if (state == (int)len) {
+                    /* matched */
+                    buf->pos += i;
+                    state = 0;
+                    lua_pushinteger(L, state);
+                    lua_replace(L, lua_upvalueindex(4));
+                    goto matched;
+                }
+                continue;
+            }
+
+            if (state == 0) {
+                i++;
+                continue;
+            }
+
+            state = 0;
+        }
+
+        buf->pos += i;
+        lua_pushinteger(L, state);
+        lua_replace(L, lua_upvalueindex(4));
+    } while (0);
+
     while (1) {
         errno = 0;
         int timeout = __waitfd(s, EVENT_READABLE, &tm);
@@ -849,17 +894,73 @@ sock_readline(lua_State *L)
             errstr = ERROR_TIMEOUT;
             goto err;
         } else {
-
+            if (buffer_available(buf) < RECV_BUFSIZE) {
+                buffer_grow(buf, RECV_BUFSIZE - buffer_available(buf));
+            }
+            int bytes_read = recv(s->fd, buf->last, RECV_BUFSIZE, 0);
+            if (bytes_read > 0) {
+                buf->last += bytes_read;
+                goto search;
+            } else if (bytes_read == 0) {
+                errstr = ERROR_CLOSED;
+                goto err;
+            } else {
+                switch (errno) {
+                case EAGAIN:
+                    // do nothing, continue
+                    continue;
+                default:
+                    errstr = strerror(errno);
+                    goto err;
+                }
+            }
         }
     }
 
+matched:
+    if (inclusive) {
+        lua_pushlstring(L, buf->start, buf->pos - buf->start);
+    } else {
+        lua_pushlstring(L, buf->start, buf->pos - buf->start - len);
+    }
+    buffer_shrink(buf);
     return 1;
 
 err:
     assert(errstr);
     lua_pushnil(L);
     lua_pushstring(L, errstr);
-    return 2;
+    lua_pushlstring(L, buf->start, buf->pos - buf->start);
+    buffer_shrink(buf);
+    return 3;
+}
+
+/**
+ * sock:readuntil(pattern, inclusive?)
+ */
+static int
+sock_readuntil(lua_State *L)
+{
+    int n;
+    n = lua_gettop(L);
+    if (n != 2 && n != 3) {
+        return luaL_error(L, "expecting 2 or 3 arguments (including the object), but got %d", n);
+    }
+    int type = lua_type(L, 2);
+    if (type != LUA_TSTRING) {
+        return luaL_error(L, "pattern should be string");
+    }
+    if (n == 3) {
+        if (!lua_isboolean(L, 3)) {
+            luaL_error(L, "the second argument should be boolean value");
+        }
+    } else {
+        lua_pushboolean(L, 0);
+    }
+    lua_pushinteger(L, 0);
+
+    lua_pushcclosure(L, sock_readuntil_iterator, 4);
+    return 1;
 }
 
 /**
@@ -974,8 +1075,7 @@ sock_getoption(lua_State * L)
 /**
  * sock:settimeout(timeout)
  *
- * Set the timeout value in seconds for subsequent socket operations
- * (read/recv, etc).
+ * Set the timeout value in seconds for subsequent socket operations.
  *
  * A socket object can be in one of three modes: blocking, non-blocking, or
  * timeout. Sockets are by default always created in blocking mode.
@@ -1113,6 +1213,7 @@ static const luaL_Reg sock_methods[] = {
     {"accept", sock_accept},
     {"write", sock_write},
     {"read", sock_read},
+    {"readuntil", sock_readuntil},
     {"close", sock_close},
     {"shutdown", sock_shutdown},
     {"fileno", sock_fileno},
