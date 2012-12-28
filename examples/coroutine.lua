@@ -21,16 +21,18 @@ function worker(sock, path)
   sock:write("\r\n")
   coroutine.yield(true)
   while true do
-    local data, err = sock:read(8192)
+    local data, err, partial = sock:read(8192)
+    if err then
+      if err == socket.ERROR_CLOSED then
+        data = partial
+      end
+    end
     if contents[path] == nil then
       contents[path] = data
     else
       contents[path] = contents[path] .. data
     end
     if err then
-      if err == socket.ERROR_CLOSED then
-        sock:close()
-      end
       break
     end
     coroutine.yield(true)
@@ -53,16 +55,18 @@ if arg[1] == "sequence" then
         sock:write("\r\n")
 
       while true do
-        local data, err = sock:read(8192)
+        local data, err, partial = sock:read(8192)
+        if err then
+          if err == socket.ERROR_CLOSED then
+            data = partial
+          end
+        end
         if contents[path] == nil then
           contents[path] = data
         else
           contents[path] = contents[path] .. data
         end
         if err then
-          if err == socket.ERROR_CLOSED then
-            sock:close()
-          end
           break
         end
       end

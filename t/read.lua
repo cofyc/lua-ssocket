@@ -1,18 +1,19 @@
 require 'Test.More'
 local socket = require "socket"
 
-plan(2)
+plan(3)
 
 sock = socket.tcp()
-local ok, err = sock:connect("google.com", 80)
+local ok, err = sock:connect("www.baidu.com", 80)
 if err then
   fail("connect err: " .. err)
 end
 
-sock:write("GET / HTTP/1.1\r\n")
-sock:write("Host: google.com\r\n")
+sock:write("GET /robots.txt HTTP/1.1\r\n")
+sock:write("Host: www.baidu.com\r\n")
 sock:write("\r\n")
 sock:settimeout(3)  -- enough time
-local data, err = sock:read(10)
-is(#data, 10)
+local data, err, partial = sock:read(4)
+is(data, "HTTP")
 is(err, nil)
+is(partial, nil)

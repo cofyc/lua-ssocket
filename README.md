@@ -73,7 +73,14 @@ Socket Object
 
 * sock:read
 
-    `data, err = sock:read(maxsize)`
+    `data, err, partial = sock:read(maxsize)`
+
+    Read specified size of data from socket. This method will not return untile
+    it reads exactly the size of data or an error occurs.
+
+    In case of success, it returns the data received; in case of error, it
+    returns nil with a string describing the error and the partial data received
+    so far.
 
 * sock:readuntil
 

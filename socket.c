@@ -769,27 +769,23 @@ err:
 }
 
 /**
- * data, err = sock:read(maxsize)
- *
- * Receive data from the socket. The return value is a string representing the
- * data received. `size` specified max size of data to receive.
- *
- * In case of success, it returns the data received; in case of error, it
- * returns the data received if available or empty string and a string describing the error.
+ * data, err, partial = sock:read(size)
  */
 static int
 sock_read(lua_State * L)
 {
     struct socket *s = tolsocket(L);
     size_t size = (int)luaL_checknumber(L, 2);
-    int bytes_read = 0;
     char *errstr = NULL;
 
-    luaL_Buffer buf;
-    char *pbuf = luaL_buffinitsize(L, &buf, size);
+    if (s->buf == NULL) {
+        s->buf = buffer_create(RECV_BUFSIZE);
+    }
+    struct buffer *buf = s->buf;
 
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
+
     while (1) {
         errno = 0;
         int timeout = __waitfd(s, EVENT_READABLE, &tm);
@@ -800,9 +796,16 @@ sock_read(lua_State * L)
             errstr = ERROR_TIMEOUT;
             goto err;
         } else {
-            bytes_read = recv(s->fd, pbuf, size, 0);
+            if (buffer_available(buf) < RECV_BUFSIZE) {
+                buffer_grow(buf, RECV_BUFSIZE - buffer_available(buf));
+            }
+            int bytes_read = recv(s->fd, buf->last, RECV_BUFSIZE, 0);
             if (bytes_read > 0) {
-                break;
+                buf->last += bytes_read;
+                if (buffer_size(buf) >= size) {
+                    break;
+                }
+                continue;
             } else if (bytes_read == 0) {
                 errstr = ERROR_CLOSED;
                 goto err;
@@ -819,14 +822,21 @@ sock_read(lua_State * L)
         }
     }
 
-    luaL_pushresultsize(&buf, bytes_read);
+    // success
+    assert(buffer_size(buf) >= size);
+    lua_pushlstring(L, buf->pos, size);
+    buf->pos += size;
+    buffer_shrink(buf);
     return 1;
 
 err:
     assert(errstr);
-    luaL_pushresultsize(&buf, bytes_read);
+    lua_pushnil(L);
     lua_pushstring(L, errstr);
-    return 2;
+    lua_pushlstring(L, buf->pos, buf->last - buf->pos);
+    buf->pos = buf->last;
+    buffer_shrink(buf);
+    return 3;
 }
 
 static int

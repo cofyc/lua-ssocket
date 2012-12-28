@@ -1,3 +1,1 @@
-sock:read
-sock:readuntil
-sock:readall
+fix gc bug
