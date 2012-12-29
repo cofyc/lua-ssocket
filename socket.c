@@ -786,6 +786,11 @@ sock_read(lua_State * L)
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
 
+again:
+    if (buffer_size(buf) >= size) {
+        goto success;
+    }
+
     while (1) {
         errno = 0;
         int timeout = __waitfd(s, EVENT_READABLE, &tm);
@@ -802,10 +807,7 @@ sock_read(lua_State * L)
             int bytes_read = recv(s->fd, buf->last, RECV_BUFSIZE, 0);
             if (bytes_read > 0) {
                 buf->last += bytes_read;
-                if (buffer_size(buf) >= size) {
-                    break;
-                }
-                continue;
+                goto again;
             } else if (bytes_read == 0) {
                 errstr = ERROR_CLOSED;
                 goto err;
@@ -822,7 +824,7 @@ sock_read(lua_State * L)
         }
     }
 
-    // success
+success:
     assert(buffer_size(buf) >= size);
     lua_pushlstring(L, buf->pos, size);
     buf->pos += size;
@@ -857,7 +859,7 @@ sock_readuntil_iterator(lua_State *L)
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
 
-search:
+again:
     do {
         int i = 0;
         int bytes = buffer_size(buf);
@@ -910,7 +912,7 @@ search:
             int bytes_read = recv(s->fd, buf->last, RECV_BUFSIZE, 0);
             if (bytes_read > 0) {
                 buf->last += bytes_read;
-                goto search;
+                goto again;
             } else if (bytes_read == 0) {
                 errstr = ERROR_CLOSED;
                 goto err;
