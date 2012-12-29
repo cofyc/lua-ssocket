@@ -992,6 +992,7 @@ sock_close(lua_State * L)
         s->fd = -1;
         close(fd);
     }
+    if (s->buf) buffer_delete(s->buf);
 
     return 0;
 }
