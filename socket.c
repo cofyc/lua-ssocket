@@ -1,3 +1,5 @@
+#include "compat.h"
+
 #include <lua.h>
 #include <lauxlib.h>
 
