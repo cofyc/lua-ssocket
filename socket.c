@@ -24,19 +24,26 @@
 #include "timeout.h"
 #include "buffer.h"
 
-#define SOCKET_NAME     "SOCKET*"
+#define TCPSOCK_TYPENAME     "TCPSOCKET*"
+#define UDPSOCK_TYPENAME     "UDPSOCKET*"
 
-/* Socket */
-struct socket {
+/* TCP Socket */
+struct tcpsock {
     int fd;
     int sock_family;
-    int sock_type;
-    int sock_protocol;
     double sock_timeout;        /* in seconds */
     struct buffer *buf;         /* used for buffer reading */
 };
 
-#define tolsocket(L) ((struct socket *)luaL_checkudata(L, 1, SOCKET_NAME));
+/* UDP Socket */
+struct udpsock {
+    int fd;
+    int sock_family;
+    double sock_timeout;        /* in seconds */
+};
+
+
+#define tolsocket(L) ((struct tcpsock *)luaL_checkudata(L, 1, TCPSOCK_TYPENAME));
 #define CHECK_ERRNO(expected)   (errno == expected)
 
 /* Custom socket error strings */
@@ -51,7 +58,7 @@ struct socket {
  * Function to perform the setting of socket blocking mode.
  */
 static void
-__setblocking(struct socket *s, int block)
+__setblocking(struct tcpsock *s, int block)
 {
     int flags = fcntl(s->fd, F_GETFL, 0);
     if (block) {
@@ -75,7 +82,7 @@ __setblocking(struct socket *s, int block)
 #define EVENT_WRITABLE  POLLOUT
 #define EVENT_ANY       (POLLIN | POLLOUT)
 static int
-__waitfd(struct socket *s, int event, struct timeout *tm)
+__waitfd(struct tcpsock *s, int event, struct timeout *tm)
 {
     int ret;
 
@@ -157,7 +164,7 @@ __select(int nfds, fd_set * readfds, fd_set * writefds, fd_set * errorfds,
  * This method assumed that address arguments start at argument index 2.
  */
 static int
-__getsockaddrfromarg(lua_State * L, struct socket *s, struct sockaddr *addr_ret,
+__getsockaddrfromarg(lua_State * L, struct tcpsock *s, struct sockaddr *addr_ret,
                      socklen_t * len_ret)
 {
     switch (s->sock_family) {
@@ -208,7 +215,7 @@ __getsockaddrfromarg(lua_State * L, struct socket *s, struct sockaddr *addr_ret,
  * Returns number of value pushed on the stack.
  */
 static int
-__makesockaddr(lua_State * L, struct socket *s, struct sockaddr *addr,
+__makesockaddr(lua_State * L, struct tcpsock *s, struct sockaddr *addr,
                socklen_t addrlen)
 {
     lua_newtable(L);
@@ -251,7 +258,7 @@ __makesockaddr(lua_State * L, struct socket *s, struct sockaddr *addr,
  * len_ret.
  */
 static int
-__getsockaddrlen(struct socket *s, socklen_t * len_ret)
+__getsockaddrlen(struct tcpsock *s, socklen_t * len_ret)
 {
     switch (s->sock_family) {
     case AF_UNIX:
@@ -268,49 +275,75 @@ __getsockaddrlen(struct socket *s, socklen_t * len_ret)
     }
 }
 
-struct socket *
-__socket_create(lua_State * L, int fd, int family, int type, int protocol)
+struct tcpsock *
+__tcpsocket_create(lua_State * L, int fd, int family)
 {
-    struct socket *s =
-        (struct socket *)lua_newuserdata(L, sizeof(struct socket));
+    struct tcpsock *s =
+        (struct tcpsock *)lua_newuserdata(L, sizeof(struct tcpsock));
     if (!s) {
         return NULL;
     }
     s->fd = fd;
     s->sock_timeout = -1;
     s->sock_family = family;
-    s->sock_type = type;
-    s->sock_protocol = protocol;
     s->buf = NULL;
-    luaL_setmetatable(L, SOCKET_NAME);
+    luaL_setmetatable(L, TCPSOCK_TYPENAME);
+    return s;
+}
+
+struct udpsock *
+__udpsocket_create(lua_State * L, int fd, int family)
+{
+    struct udpsock *s =
+        (struct udpsock *)lua_newuserdata(L, sizeof(struct udpsock));
+    if (!s) {
+        return NULL;
+    }
+    s->fd = fd;
+    s->sock_timeout = -1;
+    s->sock_family = family;
+    luaL_setmetatable(L, UDPSOCK_TYPENAME);
     return s;
 }
 
 /**
- * sock, err = socket.socket(family, type[, protocol])
+ * tcpsock, err = socket.tcp()
  *
- * Create a new socket using the given address family, socket type and protocol number.
- * The address family should be AF_INET, AF_INET6 or AF_UNIX. The
- * socket type should be SOCK_STREAM, SOCK_DGRAM or perhaps one of
- * the other SOCK_ constants. The protocol number is usually zero and may be
- * omitted in that case.
+ * Creates and returns a TCP or stream-oriented unix domain socket object.
  */
 static int
-socket_socket(lua_State * L)
+socket_tcp(lua_State * L)
 {
-    int family = (int)luaL_checknumber(L, 1);
-    int type = (int)luaL_checknumber(L, 2);
-    int protocol = (int)luaL_optnumber(L, 3, 0);
     int fd;
-    int err;
-    fd = socket(family, type, protocol);
+    fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
-        err = errno;
         lua_pushnil(L);
-        lua_pushstring(L, strerror(err));
+        lua_pushstring(L, strerror(errno));
         return 2;
     }
-    struct socket *s = __socket_create(L, fd, family, type, protocol);
+    struct tcpsock *s = __tcpsocket_create(L, fd, AF_INET);
+    if (!s) {
+        return luaL_error(L, "out of memory");
+    }
+    return 1;
+}
+
+/**
+ * udpsock, err = socket.udp()
+ *
+ * Creates and returns a UDP or datagram-oriented unix domain socket object.
+ */
+static int
+socket_udp(lua_State * L)
+{
+    int fd;
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        lua_pushnil(L);
+        lua_pushstring(L, strerror(errno));
+        return 2;
+    }
+    struct udpsock *s = __udpsocket_create(L, fd, AF_INET);
     if (!s) {
         return luaL_error(L, "out of memory");
     }
@@ -519,9 +552,9 @@ socket_getaddrinfo(lua_State * L)
  * Attemps to connect to TCP socket object to a remote server.
  */
 static int
-sock_connect(lua_State * L)
+tcpsock_connect(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     struct sockaddr addr;
     socklen_t len;
     int ret;
@@ -583,9 +616,9 @@ err:
  *  Bind the socket to a local address.
  */
 static int
-sock_bind(lua_State * L)
+tcpsock_bind(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     struct sockaddr addr;
     socklen_t len;
     int ret;
@@ -620,9 +653,9 @@ err:
  * should be at least 0.
  */
 static int
-sock_listen(lua_State * L)
+tcpsock_listen(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     int backlog;
     int ret;
     char *errstr = NULL;
@@ -658,9 +691,9 @@ err:
  * the connection. Otherwise, it returns nil and a string describing the error.
  */
 static int
-sock_accept(lua_State * L)
+tcpsock_accept(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     struct sockaddr addr;
     socklen_t addrlen;
     int clientfd;
@@ -688,9 +721,8 @@ sock_accept(lua_State * L)
         }
     }
 
-    struct socket *client =
-        __socket_create(L, clientfd, s->sock_family, s->sock_type,
-                        s->sock_protocol);
+    struct tcpsock *client =
+        __tcpsocket_create(L, clientfd, s->sock_family);
     if (!client) {
         return luaL_error(L, "out of memory");
     }
@@ -713,9 +745,9 @@ err:
  * Otherwise, it returns nil and a string describing the error.
  */
 static int
-sock_write(lua_State * L)
+tcpsock_write(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     size_t len, total_sent = 0;
     const char *buf = luaL_checklstring(L, 2, &len);
     char *errstr;
@@ -774,9 +806,9 @@ err:
  * data, err, partial = sock:read(size)
  */
 static int
-sock_read(lua_State * L)
+tcpsock_read(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     size_t size = (int)luaL_checknumber(L, 2);
     char *errstr = NULL;
 
@@ -844,9 +876,9 @@ err:
 }
 
 static int
-sock_readuntil_iterator(lua_State *L)
+tcpsock_readuntil_iterator(lua_State *L)
 {
-    struct socket *s = lua_touserdata(L, lua_upvalueindex(1));
+    struct tcpsock *s = lua_touserdata(L, lua_upvalueindex(1));
     char *errstr = NULL;
     size_t len;
     const char *pattern = lua_tolstring(L, lua_upvalueindex(2), &len);
@@ -953,7 +985,7 @@ err:
  * sock:readuntil(pattern, inclusive?)
  */
 static int
-sock_readuntil(lua_State *L)
+tcpsock_readuntil(lua_State *L)
 {
     int n;
     n = lua_gettop(L);
@@ -973,7 +1005,7 @@ sock_readuntil(lua_State *L)
     }
     lua_pushinteger(L, 0);
 
-    lua_pushcclosure(L, sock_readuntil_iterator, 4);
+    lua_pushcclosure(L, tcpsock_readuntil_iterator, 4);
     return 1;
 }
 
@@ -984,17 +1016,19 @@ sock_readuntil(lua_State *L)
  * fail.
  */
 static int
-sock_close(lua_State * L)
+tcpsock_close(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
 
-    int fd;
-
-    if ((fd = s->fd) != -1) {
+    if (s->fd != -1) {
+        close(s->fd);
         s->fd = -1;
-        close(fd);
     }
-    if (s->buf) buffer_delete(s->buf);
+
+    if (s->buf) {
+        buffer_delete(s->buf);
+        s->buf = NULL;
+    }
 
     return 0;
 }
@@ -1009,9 +1043,9 @@ sock_close(lua_State * L)
  * If how is SHUT_RDWR, further sends and receives are disallowed.
  */
 static int
-sock_shutdown(lua_State * L)
+tcpsock_shutdown(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     int how = luaL_checknumber(L, 2);
     int ret = shutdown(s->fd, how);
     if (ret < 0) {
@@ -1029,9 +1063,9 @@ sock_shutdown(lua_State * L)
  * Return the integer file descriptor of the socket.
  */
 static int
-sock_fileno(lua_State * L)
+tcpsock_fileno(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     lua_pushnumber(L, s->fd);
     return 1;
 }
@@ -1042,9 +1076,9 @@ sock_fileno(lua_State * L)
  * Set a socket option. See the Unix manual for level and option.
  */
 static int
-sock_setoption(lua_State * L)
+tcpsock_setoption(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     int level = luaL_checknumber(L, 2);
     int optname = luaL_checknumber(L, 3);
     int flag = luaL_checknumber(L, 4);
@@ -1069,9 +1103,9 @@ sock_setoption(lua_State * L)
  * Get a socket option. See the Unix manual for level and option.
  */
 static int
-sock_getoption(lua_State * L)
+tcpsock_getoption(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     int level = luaL_checknumber(L, 2);
     int optname = luaL_checknumber(L, 3);
     int flag;
@@ -1108,9 +1142,9 @@ sock_getoption(lua_State * L)
  *  > 0     -- timeout mode (non-blocking mode)
  */
 static int
-sock_settimeout(lua_State * L)
+tcpsock_settimeout(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     double timeout = (double)luaL_checknumber(L, 2);
     s->sock_timeout = timeout;
     __setblocking(s, timeout < 0.0);
@@ -1124,9 +1158,9 @@ sock_settimeout(lua_State * L)
  * A negative timeout indicates that timeout is disabled.
  */
 static int
-sock_gettimeout(lua_State * L)
+tcpsock_gettimeout(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     lua_pushnumber(L, s->sock_timeout);
     return 1;
 }
@@ -1138,9 +1172,9 @@ sock_gettimeout(lua_State * L)
  * 0/false  - non-blocking mode
  */
 static int
-sock_setblocking(lua_State * L)
+tcpsock_setblocking(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     int block = (int)luaL_checknumber(L, 2);
     s->sock_timeout = block ? -1 : 0;
 
@@ -1154,9 +1188,9 @@ sock_setblocking(lua_State * L)
  * Return the address of the remote endpoint.
  */
 static int
-sock_getpeername(lua_State * L)
+tcpsock_getpeername(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     struct sockaddr addr;
     socklen_t addrlen;
     int ret = 0, err = 0;
@@ -1182,9 +1216,9 @@ sock_getpeername(lua_State * L)
  * Return the address of the local endpoint.
  */
 static int
-sock_getsockname(lua_State * L)
+tcpsock_getsockname(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
+    struct tcpsock *s = tolsocket(L);
     struct sockaddr addr;
     socklen_t addrlen;
     int ret = 0, err = 0;
@@ -1205,45 +1239,46 @@ sock_getsockname(lua_State * L)
 }
 
 static int
-__sock_tostring(lua_State * L)
+tcpsock_tostring(lua_State * L)
 {
-    struct socket *s = tolsocket(L);
-    lua_pushfstring(L, "<socket: %d>", s->fd);
+    struct tcpsock *s = tolsocket(L);
+    lua_pushfstring(L, "<tcpsock: %d>", s->fd);
     return 1;
 }
 
 static const luaL_Reg socketlib[] = {
-    {"socket", socket_socket},
+    {"tcp", socket_tcp},
+    {"udp", socket_udp},
     {"select", socket_select},
     {"getaddrinfo", socket_getaddrinfo},
     {NULL, NULL},
 };
 
-static const luaL_Reg sock_methods[] = {
-    {"__gc", sock_close},
-    {"__tostring", __sock_tostring},
-    {"connect", sock_connect},
-    {"bind", sock_bind},
-    {"listen", sock_listen},
-    {"accept", sock_accept},
-    {"write", sock_write},
-    {"read", sock_read},
-    {"readuntil", sock_readuntil},
-    {"close", sock_close},
-    {"shutdown", sock_shutdown},
-    {"fileno", sock_fileno},
-    {"setoption", sock_setoption},
-    {"getoption", sock_getoption},
-    {"settimeout", sock_settimeout},
-    {"gettimeout", sock_gettimeout},
-    {"setblocking", sock_setblocking},
-    {"getpeername", sock_getpeername},
-    {"getsockname", sock_getsockname},
+static const luaL_Reg tcpsock_methods[] = {
+    {"__gc", tcpsock_close},
+    {"__tostring", tcpsock_tostring},
+    {"connect", tcpsock_connect},
+    {"bind", tcpsock_bind},
+    {"listen", tcpsock_listen},
+    {"accept", tcpsock_accept},
+    {"write", tcpsock_write},
+    {"read", tcpsock_read},
+    {"readuntil", tcpsock_readuntil},
+    {"close", tcpsock_close},
+    {"shutdown", tcpsock_shutdown},
+    {"fileno", tcpsock_fileno},
+    {"setoption", tcpsock_setoption},
+    {"getoption", tcpsock_getoption},
+    {"settimeout", tcpsock_settimeout},
+    {"gettimeout", tcpsock_gettimeout},
+    {"setblocking", tcpsock_setblocking},
+    {"getpeername", tcpsock_getpeername},
+    {"getsockname", tcpsock_getsockname},
     {NULL, NULL},
 };
 
 int
-luaopen_socket_c(lua_State * L)
+luaopen_socket(lua_State * L)
 {
     luaL_checkversion(L);
     luaL_newlib(L, socketlib);
@@ -1256,34 +1291,9 @@ luaopen_socket_c(lua_State * L)
     lua_pushstring(L, name);  \
     lua_setfield(L, -2, # name)
 
-    // These constants represent the address (and protocol) families, used for the first argument to socket().
-    ADD_NUM_CONST(AF_INET);
-    ADD_NUM_CONST(AF_INET6);
-    ADD_NUM_CONST(AF_UNIX);
-
-    // These constants represent the socket types, used for the second argument to socket(). (Only SOCK_STREAM and SOCK_DGRAM appear to be generally useful.)
-    ADD_NUM_CONST(SOCK_STREAM);
-    ADD_NUM_CONST(SOCK_DGRAM);
-    ADD_NUM_CONST(SOCK_RAW);
-    ADD_NUM_CONST(SOCK_RDM);
-    ADD_NUM_CONST(SOCK_SEQPACKET);
-
-    // AI_*
-    ADD_NUM_CONST(AI_NUMERICHOST);
-    ADD_NUM_CONST(AI_NUMERICSERV);
-
-    // INADDR_* Some reserved IPv4 addresses
-    ADD_NUM_CONST(INADDR_ANY);
-    ADD_NUM_CONST(INADDR_BROADCAST);
-    ADD_NUM_CONST(INADDR_LOOPBACK);
-    ADD_NUM_CONST(INADDR_UNSPEC_GROUP);
-    ADD_NUM_CONST(INADDR_ALLHOSTS_GROUP);
-    ADD_NUM_CONST(INADDR_MAX_LOCAL_GROUP);
-    ADD_NUM_CONST(INADDR_NONE);
-
     // TCP_* Tcp options
-    //ADD_NUM_CONST(TCP_NODELAY);
-    //ADD_NUM_CONST(TCP_KEEPALIVE);
+    ADD_NUM_CONST(TCP_NODELAY);
+    ADD_NUM_CONST(TCP_KEEPALIVE);
 
     // SHUT_* sock:shutdown() parameters
     ADD_NUM_CONST(SHUT_RD);
@@ -1294,11 +1304,11 @@ luaopen_socket_c(lua_State * L)
     ADD_STR_CONST(ERROR_TIMEOUT);
     ADD_STR_CONST(ERROR_CLOSED);
 
-    // Create a metatable for socket userdata.
-    luaL_newmetatable(L, SOCKET_NAME);
+    // Create a metatable for tcp socket userdata.
+    luaL_newmetatable(L, TCPSOCK_TYPENAME);
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");     /* metable.__index = metatable */
-    luaL_setfuncs(L, sock_methods, 0);
+    luaL_setfuncs(L, tcpsock_methods, 0);
     lua_pop(L, 1);
 
     // install a handler to ignore sigpipe or it will crash us

@@ -1,4 +1,3 @@
-
 PREFIX = /usr/local
 RM = rm -f
 INSTALL = install -p
@@ -17,20 +16,27 @@ endif
 
 all: socket.so
 
-socket.so: socket.c timeout.c buffer.c
+LIB_H += $(wildcard *.h)
+
+LIB_OBJS += socket.o
+LIB_OBJS += timeout.o
+LIB_OBJS += buffer.o
+
+$(LIB_OBJS): $(LIB_H)
+
+socket.so: $(LIB_OBJS)
 	$(CC) $(CFLAGS) $(SHARELIB_FLAGS) -o socket.so $^
 
 install: all
 	$(INSTALL_DATA) socket.so $(PREFIX)/lib/lua/$(LUA_VERSION)
-	$(INSTALL_DATA) socket.lua $(PREFIX)/lib/lua/$(LUA_VERSION)
 
 uninstall:
 	$(RM) $(PREFIX)/lib/lua/$(LUA_VERSION)/socket.so
-	$(RM) $(PREFIX)/lib/lua/$(LUA_VERSION)/socket.lua
 
 clean:
 	$(RM) socket.so
 	$(RM) -r socket.so.dSYM
+	$(RM) $(LIB_OBJS)
 
 test: all
 	@prove --exec=lua --timer t/*.lua

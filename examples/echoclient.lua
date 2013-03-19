@@ -3,7 +3,7 @@ local socket = require "socket"
 
 HOST = 'localhost'
 PORT = 12345
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock = socket.tcp()
 sock:connect(HOST, PORT)
 sock:write("Hello, World!")
 data = sock:read(1024)

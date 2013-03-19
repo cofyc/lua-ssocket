@@ -6,16 +6,21 @@ Lua 5.2 socket module
 Examples
 ========
 
-    sock = socket.tcp()
-    local ok, err = sock:connect("www.google.com", 80)
+    socket = require "socket"
+    tcpsock = socket.tcp()
+    ok, err = tcpsock:connect("www.google.com", 80)
     if err then
         print(err)
     end
-    sock:write("GET / HTTP/1.1\r\n")
-    sock:write("\r\n")
-    sock:settimeout(1)
-    io.output():write(sock:read(1024))
-    sock:close()
+    tcpsock:write("GET / HTTP/1.1\r\n")
+    tcpsock:write("\r\n")
+    tcpsock:settimeout(1)
+    data, err, partial = tcpsock:read(1024)
+    if err == socket.ERROR_TIMEOUT then
+      data = partial
+    end
+    io.output():write(data)
+    tcpsock:close()
 
 More examples, see *examples/* folder.
 
@@ -25,9 +30,13 @@ Docs
 Socket Module
 -------------
 
-* socket.socket
+* socket.tcp
 
-    `sock, err = socket.socket(family, type[, protocol])`
+    `tcpsock, err = socket.tcp()`
+
+* socket.udp
+
+    `udpsock, err = socket.udp()`
 
 * socket.getaddrinfo
 
@@ -37,43 +46,34 @@ Socket Module
 
     `readfds, writefds, err = socket.select(readfds, writefds[, timeout=-1])`
 
-* socket.tcp
+TCP Socket Object
+-----------------
 
-    `sock, err = socket.tcp()`
+* tcpsock:connect
 
-* socket.udp
+    `ok, err = tcpsock:connect(host, port)`
+    `ok, err = tcpsock:connect(unix_socket_path)`
 
-    `sock, err = socket.udp()`
+* tcpsock:bind
 
+    `ok, err = tcpsock:bind(host, port)`
+    `ok, err = tcpsock:bind(unix_socket_path)`
 
-Socket Object
--------------
+* tcpsock:listen
 
-* sock:connect
+    `ok, err = tcpsock:listen(backlog)`
 
-    `ok, err = sock:connect(host, port)`
-    `ok, err = sock:connect(unix_socket_path)`
+* tcpsock:accept
 
-* sock:bind
+    `tcpsock, err = tcpsock:accept()`
 
-    `ok, err = sock:bind(host, port)`
-    `ok, err = sock:bind(unix_socket_path)`
+* tcpsock:write
 
-* sock:listen
+    `bytes, err = tcpsock:write(data)`
 
-    `ok, err = sock:listen(backlog)`
+* tcpsock:read
 
-* sock:accept
-
-    `sock, err = sock:accept()`
-
-* sock:write
-
-    `bytes, err = sock:write(data)`
-
-* sock:read
-
-    `data, err, partial = sock:read(maxsize)`
+    `data, err, partial = tcpsock:read(size)`
 
     Read specified size of data from socket. This method will not return untile
     it reads exactly the size of data or an error occurs.
@@ -82,9 +82,9 @@ Socket Object
     returns nil with a string describing the error and the partial data received
     so far.
 
-* sock:readuntil
+* tcpsock:readuntil
 
-    `iterator = sock:readuntil(pattern, inclusive?)`
+    `iterator = tcpsock:readuntil(pattern, inclusive?)`
 
     This method returns an iterator function that can be called to read the data
     stream until it sees the specified pattern or an error occurs.
@@ -94,91 +94,65 @@ Socket Object
 
     For example:
 
-        local reader = sock:readuntil("\r\n")
+        local reader = tcpsock:readuntil("\r\n")
         while true do
             local data, err, partial = reader()
             if data then
                 printf("line: " .. data)
             end
         end
-    
+
     This iterator function returns the received data right before the specified
     pattern string in the incoming data stream.
 
     In case of error, it will return nil along with a string describing the
     error and the partial data bytes that have been read so far.
 
-* sock:close
+* tcpsock:close
 
-    `sock:close()`
+    `tcpsock:close()`
 
-* sock:shutdown
+* tcpsock:shutdown
 
-    `ok, err = sock:shutdown(how)`
+    `ok, err = tcpsock:shutdown(how)`
 
-* sock:fileno
+* tcpsock:fileno
 
-    `fd = sock:fileno()`
+    `fd = tcpsock:fileno()`
 
-* sock:setoption
+* tcpsock:setoption
 
-    `ok, err = sock:setoption(level, optname, value)`
+    `ok, err = tcpsock:setoption(level, optname, value)`
 
-* sock:getoption
+* tcpsock:getoption
 
-    `value, err = sock:getoption(level, optname)`
+    `value, err = tcpsock:getoption(level, optname)`
 
-* sock:settimeout
+* tcpsock:settimeout
 
-    `sock:settimeout(timeout)`
+    `tcpsock:settimeout(timeout)`
 
-* sock:gettimeout
+* tcpsock:gettimeout
 
-    `timeout = sock:gettimeout()`
+    `timeout = tcpsock:gettimeout()`
 
-* sock:setblocking
-    
-    `sock:setblocking(block)`
+* tcpsock:setblocking
 
-* sock:getpeername
+    `tcpsock:setblocking(block)`
 
-    `addr, err = sock:getpeername()`
+* tcpsock:getpeername
 
-* sock:getsockname
+    `addr, err = tcpsock:getpeername()`
 
-    `addr, err = sock:getsockname()`
+* tcpsock:getsockname
+
+    `addr, err = tcpsock:getsockname()`
+
+UDP Socket Object
+-----------------
 
 Contants
 --------
-
-These constants represent the address (and protocol) families, used for the first argument to socket().
-
-* socket.AF_INET
-* socket.AF_INET6
-* socket.AF_UNIX
-
-These constants represent the socket types, used for the second argument to socket(). (Only SOCK_STREAM and SOCK_DGRAM appear to be generally useful.)
-
-* socket.SOCK_STREAM
-* socket.SOCK_DGRAM
-* socket.SOCK_RAW
-* socket.SOCK_RDM
-* socket.SOCK_SEQPACKET
-
-AI_*
-
- * socket.AI_NUMERICHOST
- * socket.AI_NUMERICSERV
-
-INADDR_* Some reserved IPv4 addresses
-
- * socket.INADDR_ANY
- * socket.INADDR_BROADCAST
- * socket.INADDR_LOOPBACK
- * socket.INADDR_UNSPEC_GROUP
- * socket.INADDR_ALLHOSTS_GROUP
- * socket.INADDR_MAX_LOCAL_GROUP
- * socket.INADDR_NONE
 
 SHUT_* sock:shutdown() parameters
 
