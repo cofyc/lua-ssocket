@@ -178,12 +178,11 @@ __getsockaddrfromarg(lua_State * L, struct tcpsock *s, struct sockaddr *addr_ret
         addr->sin_addr = *(struct in_addr *)hostinfo->h_addr;
         *len_ret = sizeof(*addr);
     } else if (s->sock_family == AF_UNIX) {
-        /*struct sockaddr_un *addr; */
-        /*char *path; */
-        /*int len; */
-        lua_pushnil(L);
-        lua_pushfstring(L, "unix not supported now");
-        return 1;
+        struct sockaddr_un *addr = (struct sockaddr_un *)addr_ret;
+        const char *path = luaL_checkstring(L, 2);
+        addr->sun_family = AF_UNIX;
+        strncpy(addr->sun_path, path, sizeof(addr->sun_path) - 1);
+        *len_ret = sizeof(*addr);
     } else {
         assert(0);
     }
@@ -573,7 +572,9 @@ static int
 tcpsock_connect(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
-    struct sockaddr addr;
+    struct sockaddr_in addr_in;
+    struct sockaddr_un addr_un;
+    struct sockaddr *addr = NULL;
     socklen_t len;
     int ret;
     char *errstr = NULL;
@@ -589,22 +590,24 @@ tcpsock_connect(lua_State * L)
 
     if (n == 3) {
         s->sock_family = AF_INET;
+        addr = (struct sockaddr *)&addr_in;
     } else if (n == 2) {
         s->sock_family = AF_UNIX;
+        addr = (struct sockaddr *)&addr_un;
+    }
+
+    if (__getsockaddrfromarg(L, s, addr, &len)) {
+        return 2;
     }
 
     if (__tcpsock_createfd(L, s, SOCK_STREAM) == -1)
         return 2;
 
-    if (__getsockaddrfromarg(L, s, &addr, &len)) {
-        return 2;
-    }
-
     errno = 0;
     if (s->sock_timeout > 0) {
         fcntl(s->fd, F_SETFL, O_NONBLOCK);
     }
-    ret = connect(s->fd, (struct sockaddr *)&addr, len);
+    ret = connect(s->fd, addr, len);
 
     if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
         /* Connecting in progress with timeout, wait until we have the result of
@@ -647,25 +650,42 @@ err:
 }
 
 /**
- *  ok, err = sock:bind(host, port)
- *
- *  Bind the socket to a local address.
+ * ok, err = tcpsock:bind(host, port)
+ * ok, err = tcpsock:connect("unix:/path/to/unix-domain.sock")
  */
 static int
 tcpsock_bind(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
-    struct sockaddr addr;
+    struct sockaddr_in addr_in;
+    struct sockaddr_un addr_un;
+    struct sockaddr *addr = NULL;
     socklen_t len;
     int ret;
     char *errstr = NULL;
-
-    if (!__getsockaddrfromarg(L, s, &addr, &len)) {
-        errstr = strerror(errno);
-        goto err;
+    int n;
+    n = lua_gettop(L);
+    if (n != 2 && n != 3) {
+        return luaL_error(L, "tcpsocket:bind expecting 2 or 3 arguments"
+        " (including the object itself), but seen %d", n);
     }
 
-    ret = bind(s->fd, &addr, len);
+    if (n == 3) {
+        s->sock_family = AF_INET;
+        addr = (struct sockaddr *)&addr_in;
+    } else if (n == 2) {
+        s->sock_family = AF_UNIX;
+        addr = (struct sockaddr *)&addr_un;
+    }
+
+    if (__getsockaddrfromarg(L, s, addr, &len)) {
+        return 2;
+    }
+
+    if (__tcpsock_createfd(L, s, SOCK_STREAM) == -1)
+        return 2;
+
+    ret = bind(s->fd, addr, len);
     if (ret < 0) {
         errstr = strerror(errno);
         goto err;
@@ -682,7 +702,7 @@ err:
 }
 
 /**
- * ok, err = sock:listen(backlog)
+ * ok, err = tcpsock:listen(backlog)
  *
  * Listen for connections make to the socket.
  * The backlog argument specifies the maximum number of queue connections and
@@ -718,7 +738,7 @@ err:
 }
 
 /**
- * sock, err = sock:accept()
+ * sock, err = tcpsock:accept()
  *
  * Accept a connection. The socket must be bound to an address and listening for
  * connections.
@@ -773,7 +793,7 @@ err:
 }
 
 /**
- * bytes, err = sock:write(data)
+ * bytes, err = tcpsock:write(data)
  *
  * This method is a synchronous operation that will not return until all the
  * data has been flushed into the system socket send buffer or an error occurs.
@@ -845,7 +865,7 @@ err:
 }
 
 /**
- * data, err, partial = sock:read(size)
+ * data, err, partial = tcpsock:read(size)
  */
 static int
 tcpsock_read(lua_State * L)
@@ -1058,7 +1078,7 @@ tcpsock_readuntil(lua_State *L)
 }
 
 /**
- * ok, err = sock:close()
+ * ok, err = tcpsock:close()
  *
  * Closes the current TCP or stream unix domain socket. It returns the 1 in case of
  * success and returns nil with a string describing the error otherwise.
@@ -1076,7 +1096,7 @@ tcpsock_close(lua_State * L)
 }
 
 /**
- * ok, err = sock:shutdown(how)
+ * ok, err = tcpsock:shutdown(how)
  *
  * Shut down one or both halves of the connection.
  *
@@ -1100,7 +1120,7 @@ tcpsock_shutdown(lua_State * L)
 }
 
 /**
- * fd = sock:fileno()
+ * fd = tcpsock:fileno()
  *
  * Return the integer file descriptor of the socket.
  */
@@ -1113,7 +1133,7 @@ tcpsock_fileno(lua_State * L)
 }
 
 /**
- * ok, err = sock:setoption(level, optname, value)
+ * ok, err = tcpsock:setoption(level, optname, value)
  *
  * Set a socket option. See the Unix manual for level and option.
  */
@@ -1140,7 +1160,7 @@ tcpsock_setoption(lua_State * L)
 }
 
 /**
- * value, err = sock:getopt(level, optname)
+ * value, err = tcpsock:getopt(level, optname)
  *
  * Get a socket option. See the Unix manual for level and option.
  */
@@ -1196,7 +1216,7 @@ tcpsock_settimeout(lua_State * L)
 }
 
 /*
- * timeout = sock:gettimeout()
+ * timeout = tcpsock:gettimeout()
  *
  * Returns the timeout in seconds (number) associated with socket.
  * A negative timeout indicates that timeout is disabled.
@@ -1233,7 +1253,7 @@ tcpsock_setblocking(lua_State * L)
 }
 
 /**
- * addr, err = sock:getpeername
+ * addr, err = tcpsock:getpeername
  *
  * Return the address of the remote endpoint.
  */
@@ -1261,7 +1281,7 @@ tcpsock_getpeername(lua_State * L)
 }
 
 /**
- * addr, err = sock:getsockname()
+ * addr, err = tcpsock:getsockname()
  *
  * Return the address of the local endpoint.
  */

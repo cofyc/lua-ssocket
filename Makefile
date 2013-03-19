@@ -39,7 +39,7 @@ clean:
 	$(RM) $(LIB_OBJS)
 
 test: all
-	@prove --exec=lua --timer t/*.lua
+	@prove --exec=lua --timer t/test-*.lua
 
 tags:
 	find . \( -name .git -type d -prune \) -o \( -name '*.[hc]' -type f -print \) | xargs ctags -a

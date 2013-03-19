@@ -1,3 +1,4 @@
+#!/usr/bin/env lua
 -- setup path
 local filepath = debug.getinfo(1).source:match("@(.*)$")
 local filedir = filepath:match('(.+)/[^/]*') or '.'
@@ -7,7 +8,7 @@ package.cpath = package.cpath .. string.format(";%s/?.so;%s/../?.so", filedir, f
 require 'Test.More'
 local socket = require "socket"
 
-plan(2)
+plan(15)
 
 function bigdata(len)
   local s = ''
