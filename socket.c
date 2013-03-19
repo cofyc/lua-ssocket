@@ -49,6 +49,7 @@ struct udpsock {
 /* Custom socket error strings */
 #define ERROR_TIMEOUT   "Operation timed out"
 #define ERROR_CLOSED    "Connection closed"
+#define ERROR_REFUSED   "Connection refused"
 
 /* Default BUFSIZE */
 #define SEND_BUFSIZE 4096
@@ -58,15 +59,15 @@ struct udpsock {
  * Function to perform the setting of socket blocking mode.
  */
 static void
-__setblocking(struct tcpsock *s, int block)
+__setblocking(int fd, int block)
 {
-    int flags = fcntl(s->fd, F_GETFL, 0);
+    int flags = fcntl(fd, F_GETFL, 0);
     if (block) {
         flags &= (~O_NONBLOCK);
     } else {
         flags |= O_NONBLOCK;
     }
-    fcntl(s->fd, F_SETFL, flags);
+    fcntl(fd, F_SETFL, flags);
 }
 
 /**
@@ -134,26 +135,16 @@ __select(int nfds, fd_set * readfds, fd_set * writefds, fd_set * errorfds,
 }
 
 /**
- * Parse a socket address argument according to the socket object's address
- * family.
- * Return 1 if the address was in the proper format, 0 if not.
+ * Parse socket address arguments.
  *
  * Socket addresses are represented as follows:
- *  A single string is used for the AF_UNIX address family.
- *  Two arguments (host, port) is used for the AF_INET address family,
- *  where host is a string representing either a hostname in Internet Domain
- *  Notation like 'www.example.com' or an IPv4 address like '8.8.8.8', and port
- *  is an number.
- *  For AF_INET6 address family, four arguments (host, port, flowinfo, scopeid)
- *  is used, where flowinfo and scopid represents sin6_flowinfo and
- *  sin6_scope_id member in struct sockaddr_in6 in C. For socket module,
- *  flowinfo and scopid can be ommited just for backward compatibility.
- *  Other address family are currently not supported.
- *
- * The address format arguments required by a particular socket object is
- * automatically selected based on the address family specified when the socket
- * object was created.
- *
+
+ *  - A single string is used for the AF_UNIX address family.
+ *  - Two arguments (host, port) is used for the AF_INET address family,
+ *    where host is a string representing either a hostname in Internet Domain
+ *    Notation like 'www.example.com' or an IPv4 address like '8.8.8.8', and port
+ *    is an number.
+
  * If you use a hostname in the host portion of IPv4/IPv6 socket address, the
  * program may show a nodeterministic behavior, as we use the first address
  * returned from the DNS resolution. The socket address will be resolved
@@ -162,46 +153,41 @@ __select(int nfds, fd_set * readfds, fd_set * writefds, fd_set * errorfds,
  * numeric address in host portion.
  *
  * This method assumed that address arguments start at argument index 2.
+ *
+ * Returns 0 on success, 1 on failure.
  */
 static int
 __getsockaddrfromarg(lua_State * L, struct tcpsock *s, struct sockaddr *addr_ret,
                      socklen_t * len_ret)
 {
-    switch (s->sock_family) {
-    case AF_INET:
-        {
-            struct sockaddr_in *addr = (struct sockaddr_in *)addr_ret;
-            const char *host;
-            int port;
-            host = luaL_checkstring(L, 2);
-            port = luaL_checknumber(L, 3);
-            struct hostent *hostinfo;
-            hostinfo = gethostbyname(host);
-            if (hostinfo == NULL) {
-                return 0;
-            }
-            addr->sin_family = AF_INET;
-            addr->sin_port = htons(port);
-            addr->sin_addr = *(struct in_addr *)hostinfo->h_addr;
-            *len_ret = sizeof(*addr);
+    if (s->sock_family == AF_INET) {
+        struct sockaddr_in *addr = (struct sockaddr_in *)addr_ret;
+        const char *host;
+        int port;
+        host = luaL_checkstring(L, 2);
+        port = luaL_checknumber(L, 3);
+        struct hostent *hostinfo;
+        hostinfo = gethostbyname(host);
+        if (hostinfo == NULL) {
+            lua_pushnil(L);
+            lua_pushfstring(L, "can't resolve: %s", host);
             return 1;
-            break;
         }
-    case AF_INET6:
-        {
-            break;
-        }
-    case AF_UNIX:
-        {
-            /*struct sockaddr_un *addr; */
-            /*char *path; */
-            /*int len; */
-            break;
-        }
-    default:
-        return 0;
+        addr->sin_family = AF_INET;
+        addr->sin_port = htons(port);
+        addr->sin_addr = *(struct in_addr *)hostinfo->h_addr;
+        *len_ret = sizeof(*addr);
+    } else if (s->sock_family == AF_UNIX) {
+        /*struct sockaddr_un *addr; */
+        /*char *path; */
+        /*int len; */
+        lua_pushnil(L);
+        lua_pushfstring(L, "unix not supported now");
+        return 1;
+    } else {
+        assert(0);
     }
-    return 1;
+    return 0;
 }
 
 /**
@@ -276,34 +262,78 @@ __getsockaddrlen(struct tcpsock *s, socklen_t * len_ret)
 }
 
 struct tcpsock *
-__tcpsocket_create(lua_State * L, int fd, int family)
+__tcpsock_create(lua_State * L)
 {
     struct tcpsock *s =
         (struct tcpsock *)lua_newuserdata(L, sizeof(struct tcpsock));
     if (!s) {
         return NULL;
     }
-    s->fd = fd;
+    s->fd = -1;
     s->sock_timeout = -1;
-    s->sock_family = family;
+    s->sock_family = 0;
     s->buf = NULL;
     luaL_setmetatable(L, TCPSOCK_TYPENAME);
     return s;
 }
 
 struct udpsock *
-__udpsocket_create(lua_State * L, int fd, int family)
+__udpsock_create(lua_State * L)
 {
     struct udpsock *s =
         (struct udpsock *)lua_newuserdata(L, sizeof(struct udpsock));
     if (!s) {
         return NULL;
     }
-    s->fd = fd;
-    s->sock_timeout = -1;
-    s->sock_family = family;
+    s->fd = -1;
+    s->sock_timeout = 0;
+    s->sock_family = 0;
     luaL_setmetatable(L, UDPSOCK_TYPENAME);
     return s;
+}
+
+static int
+__tcpsock_createfd(lua_State *L, struct tcpsock *s, int type)
+{
+    int fd, on = 1;
+
+    if ((fd = socket(s->sock_family, type, 0)) == -1) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "creating socket: %s", strerror(errno));
+        return -1;
+    }
+
+    s->fd = fd;
+
+    // reuse address
+    if (setsockopt(s->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) == -1) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "setsockopt SO_REUSEADDR: %s", strerror(errno));
+        return -1;
+    }
+
+    // block or non-block
+    __setblocking(s->fd, s->sock_timeout < 0.0);
+
+    return 0;
+}
+
+static int
+__tcpsock_closefd(lua_State *L, struct tcpsock *s)
+{
+    if (s->fd != -1) {
+        if (close(s->fd) != 0) {
+            lua_pushnil(L);
+            lua_pushstring(L, strerror(errno));
+            return -1;
+        }
+        s->fd = -1;
+    }
+    if (s->buf) {
+        buffer_delete(s->buf);
+        s->buf = NULL;
+    }
+    return 0;
 }
 
 /**
@@ -314,14 +344,7 @@ __udpsocket_create(lua_State * L, int fd, int family)
 static int
 socket_tcp(lua_State * L)
 {
-    int fd;
-    fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        lua_pushnil(L);
-        lua_pushstring(L, strerror(errno));
-        return 2;
-    }
-    struct tcpsock *s = __tcpsocket_create(L, fd, AF_INET);
+    struct tcpsock *s = __tcpsock_create(L);
     if (!s) {
         return luaL_error(L, "out of memory");
     }
@@ -336,14 +359,7 @@ socket_tcp(lua_State * L)
 static int
 socket_udp(lua_State * L)
 {
-    int fd;
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) {
-        lua_pushnil(L);
-        lua_pushstring(L, strerror(errno));
-        return 2;
-    }
-    struct udpsock *s = __udpsocket_create(L, fd, AF_INET);
+    struct udpsock *s = __udpsock_create(L);
     if (!s) {
         return luaL_error(L, "out of memory");
     }
@@ -547,9 +563,11 @@ socket_getaddrinfo(lua_State * L)
 }
 
 /**
- * ok, err = sock:connect(host, port)
+ * ok, err = tcpsock:connect(host, port)
+ * ok, err = tcpsock:connect("unix:/path/to/unix-domain.sock")
  *
- * Attemps to connect to TCP socket object to a remote server.
+ * Attemps to connect to TCP socket object to a remote server or to a stream
+ * unix domain socket file.
  */
 static int
 tcpsock_connect(lua_State * L)
@@ -559,16 +577,33 @@ tcpsock_connect(lua_State * L)
     socklen_t len;
     int ret;
     char *errstr = NULL;
+    int n;
+    n = lua_gettop(L);
+    if (n != 2 && n != 3) {
+        return luaL_error(L, "tcpsocket:connect expecting 2 or 3 arguments"
+        " (including the object itself), but seen %d", n);
+    }
 
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
 
-    if (!__getsockaddrfromarg(L, s, &addr, &len)) {
-        errstr = strerror(errno);
-        goto err;
+    if (n == 3) {
+        s->sock_family = AF_INET;
+    } else if (n == 2) {
+        s->sock_family = AF_UNIX;
+    }
+
+    if (__tcpsock_createfd(L, s, SOCK_STREAM) == -1)
+        return 2;
+
+    if (__getsockaddrfromarg(L, s, &addr, &len)) {
+        return 2;
     }
 
     errno = 0;
+    if (s->sock_timeout > 0) {
+        fcntl(s->fd, F_SETFL, O_NONBLOCK);
+    }
     ret = connect(s->fd, (struct sockaddr *)&addr, len);
 
     if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
@@ -605,6 +640,7 @@ tcpsock_connect(lua_State * L)
 
 err:
     assert(errstr);
+    __tcpsock_closefd(L, s);
     lua_pushnil(L);
     lua_pushstring(L, errstr);
     return 2;
@@ -721,8 +757,9 @@ tcpsock_accept(lua_State * L)
         }
     }
 
-    struct tcpsock *client =
-        __tcpsocket_create(L, clientfd, s->sock_family);
+    struct tcpsock *client = __tcpsock_create(L);
+    client->fd = clientfd;
+    client->sock_family = s->sock_family;
     if (!client) {
         return luaL_error(L, "out of memory");
     }
@@ -751,6 +788,11 @@ tcpsock_write(lua_State * L)
     size_t len, total_sent = 0;
     const char *buf = luaL_checklstring(L, 2, &len);
     char *errstr;
+
+    if (s->fd == -1) {
+        errstr = ERROR_CLOSED;
+        goto err;
+    }
 
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
@@ -811,11 +853,17 @@ tcpsock_read(lua_State * L)
     struct tcpsock *s = tolsocket(L);
     size_t size = (int)luaL_checknumber(L, 2);
     char *errstr = NULL;
+    struct buffer *buf = NULL;
 
     if (s->buf == NULL) {
         s->buf = buffer_create(RECV_BUFSIZE);
     }
-    struct buffer *buf = s->buf;
+    buf = s->buf;
+
+    if (s->fd == -1) {
+        errstr = ERROR_CLOSED;
+        goto err;
+    }
 
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
@@ -1010,27 +1058,21 @@ tcpsock_readuntil(lua_State *L)
 }
 
 /**
- * sock:close()
+ * ok, err = sock:close()
  *
- * Set the file descriptor to -1 so operations tried subsequently will surely
- * fail.
+ * Closes the current TCP or stream unix domain socket. It returns the 1 in case of
+ * success and returns nil with a string describing the error otherwise.
  */
 static int
 tcpsock_close(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
 
-    if (s->fd != -1) {
-        close(s->fd);
-        s->fd = -1;
-    }
+    if (__tcpsock_closefd(L, s) == -1)
+        return 2;
 
-    if (s->buf) {
-        buffer_delete(s->buf);
-        s->buf = NULL;
-    }
-
-    return 0;
+    lua_pushboolean(L, 1);
+    return 1;
 }
 
 /**
@@ -1147,7 +1189,9 @@ tcpsock_settimeout(lua_State * L)
     struct tcpsock *s = tolsocket(L);
     double timeout = (double)luaL_checknumber(L, 2);
     s->sock_timeout = timeout;
-    __setblocking(s, timeout < 0.0);
+    if (s->fd > 0) {
+        __setblocking(s->fd, timeout < 0.0);
+    }
     return 0;
 }
 
@@ -1176,9 +1220,15 @@ tcpsock_setblocking(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
     int block = (int)luaL_checknumber(L, 2);
-    s->sock_timeout = block ? -1 : 0;
 
-    __setblocking(s, block);
+    if (block && s->sock_timeout >= 0) {
+        s->sock_timeout = -1;
+        __setblocking(s->fd, block);
+    } else if (!block && s->sock_timeout < 0) {
+        s->sock_timeout = 0;
+        __setblocking(s->fd, block);
+    }
+
     return 0;
 }
 
@@ -1303,6 +1353,7 @@ luaopen_socket(lua_State * L)
     // ERROR_* some error strings, which can be used to detect errors
     ADD_STR_CONST(ERROR_TIMEOUT);
     ADD_STR_CONST(ERROR_CLOSED);
+    ADD_STR_CONST(ERROR_REFUSED);
 
     // Create a metatable for tcp socket userdata.
     luaL_newmetatable(L, TCPSOCK_TYPENAME);

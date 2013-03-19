@@ -109,8 +109,11 @@ TCP Socket Object
     error and the partial data bytes that have been read so far.
 
 * tcpsock:close
+  
+    `ok, err = sock:close()`
 
-    `tcpsock:close()`
+  Closes the current TCP or stream unix domain socket. It returns the 1 in case
+  of success and returns nil with a string describing the error otherwise.
 
 * tcpsock:shutdown
 
@@ -164,6 +167,7 @@ ERROR_* some error strings, which can be used to detect errors
 
   * socket.ERROR_TIMEOUT
   * scoekt.ERROR_CLOSED
+  * scoekt.ERROR_REFUSED
 
 References
 ==========
