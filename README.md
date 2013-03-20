@@ -157,11 +157,16 @@ UDP Socket Object
 Contants
 --------
 
-SHUT_* sock:shutdown() parameters
+TCP_* tcpsock:setoption and tcpsock:getoption parameters
 
- * socket.SHUT_RD
- * socket.SHUT_WR
- * socket.SHUT_RDWR
+  * socket.TCP_NODELAY
+  * socket.TCP_KEEPALIVE
+
+SHUT_* tcpsock:shutdown() parameters
+
+  * socket.SHUT_RD
+  * socket.SHUT_WR
+  * socket.SHUT_RDWR
 
 ERROR_* some error strings, which can be used to detect errors
 
