@@ -183,14 +183,6 @@ __setipaddr(lua_State *L, const char *name, struct sockaddr *addr_ret, size_t ad
     memcpy((char *)addr_ret, res->ai_addr, addr_ret_size);
     freeaddrinfo(res);
     return 0;
-    /*struct hostent *hostinfo;*/
-    /*hostinfo = gethostbyname(host);*/
-    /*addr->sin_addr = *(struct in_addr *)hostinfo->h_addr;*/
-    /*if (hostinfo == NULL) {*/
-    /*lua_pushnil(L);*/
-    /*lua_pushfstring(L, "can't resolve: %s", host);*/
-    /*return 1;*/
-    /*}*/
 }
 
 /**
