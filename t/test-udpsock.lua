@@ -12,5 +12,10 @@ plan(16)
 
 -- 1. Basic
 local udpsock = socket.udp()
+ok, err = udpsock:connect('127.0.0.1', 8888)
+is(ok, true)
+is(err, nil)
 like(udpsock, "<udpsock: %d+>") -- __tostring
+
+udpsock:send("OK")
 is(udpsock:close(), true)
