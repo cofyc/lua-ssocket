@@ -388,6 +388,61 @@ __sockobj_close(lua_State *L, struct sockobj *s)
 }
 
 /**
+ * Generic socket connection.
+ */
+static int
+__sockobj_connect(lua_State *L, struct sockobj *s, struct sockaddr *addr, socklen_t len)
+{
+    int ret;
+    char *errstr = NULL;
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+
+    errno = 0;
+    if (s->sock_timeout > 0) {
+        fcntl(s->fd, F_SETFL, O_NONBLOCK);
+    }
+    ret = connect(s->fd, addr, len);
+
+    if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
+        /* Connecting in progress with timeout, wait until we have the result of
+         * the connection attempt or timeout.
+         */
+        int timeout = __waitfd(s, EVENT_ANY, &tm);
+        if (timeout == 1) {
+            errstr = ERROR_TIMEOUT;
+            goto err;
+        } else if (timeout == 0) {
+            // In case of EINPROGRESS, use getsockopt(SO_ERROR) to get the real
+            // error, when the connection attempt finished.
+            socklen_t ret_size = sizeof(ret);
+            getsockopt(s->fd, SOL_SOCKET, SO_ERROR, &ret, &ret_size);
+            if (ret == EISCONN) {
+                errno = 0;
+            } else {
+                errno = ret;
+            }
+        } else {
+            errstr = strerror(errno);
+            goto err;
+        }
+    }
+
+    if (errno) {
+        errstr = strerror(errno);
+        goto err;
+    }
+    return 0;
+
+err:
+    assert(errstr);
+    __sockobj_close(L, s);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return -1;
+}
+
+/**
  * tcpsock, err = socket.tcp()
  *
  * Creates and returns a TCP or stream-oriented unix domain socket object.
@@ -720,17 +775,12 @@ tcpsock_connect(lua_State * L)
     struct sockobj *s = getsockobj(L);
     sockaddr_t addr;
     socklen_t len;
-    int ret;
-    char *errstr = NULL;
     int n;
     n = lua_gettop(L);
     if (n != 2 && n != 3) {
         return luaL_error(L, "tcpsocket:connect expecting 2 or 3 arguments"
         " (including the object itself), but seen %d", n);
     }
-
-    struct timeout tm;
-    timeout_init(&tm, s->sock_timeout);
 
     if (n == 3) {
         s->sock_family = AF_INET;
@@ -745,50 +795,11 @@ tcpsock_connect(lua_State * L)
     if (__sockobj_createsocket(L, s, SOCK_STREAM) == -1)
         return 2;
 
-    errno = 0;
-    if (s->sock_timeout > 0) {
-        fcntl(s->fd, F_SETFL, O_NONBLOCK);
-    }
-    ret = connect(s->fd, SAS2SA(&addr), len);
-
-    if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
-        /* Connecting in progress with timeout, wait until we have the result of
-         * the connection attempt or timeout.
-         */
-        int timeout = __waitfd(s, EVENT_ANY, &tm);
-        if (timeout == 1) {
-            errstr = ERROR_TIMEOUT;
-            goto err;
-        } else if (timeout == 0) {
-            // In case of EINPROGRESS, use getsockopt(SO_ERROR) to get the real
-            // error, when the connection attempt finished.
-            socklen_t ret_size = sizeof(ret);
-            getsockopt(s->fd, SOL_SOCKET, SO_ERROR, &ret, &ret_size);
-            if (ret == EISCONN) {
-                errno = 0;
-            } else {
-                errno = ret;
-            }
-        } else {
-            errstr = strerror(errno);
-            goto err;
-        }
-    }
-
-    if (errno) {
-        errstr = strerror(errno);
-        goto err;
-    }
+    if (__sockobj_connect(L, s, SAS2SA(&addr), len) == -1)
+        return 2;
 
     lua_pushboolean(L, 1);
     return 1;
-
-err:
-    assert(errstr);
-    __sockobj_close(L, s);
-    lua_pushnil(L);
-    lua_pushstring(L, errstr);
-    return 2;
 }
 
 /**
@@ -1385,17 +1396,12 @@ udpsock_connect(lua_State * L)
     struct sockobj *s = getsockobj(L);
     sockaddr_t addr;
     socklen_t len;
-    int ret;
-    char *errstr = NULL;
     int n;
     n = lua_gettop(L);
     if (n != 2 && n != 3) {
         return luaL_error(L, "udpsocket:connect expecting 2 or 3 arguments"
         " (including the object itself), but seen %d", n);
     }
-
-    struct timeout tm;
-    timeout_init(&tm, s->sock_timeout);
 
     if (n == 3) {
         s->sock_family = AF_INET;
@@ -1407,53 +1413,14 @@ udpsock_connect(lua_State * L)
         return 2;
     }
 
-    if (__sockobj_createsocket(L, s, SOCK_STREAM) == -1)
+    if (__sockobj_createsocket(L, s, SOCK_DGRAM) == -1)
         return 2;
 
-    errno = 0;
-    if (s->sock_timeout > 0) {
-        fcntl(s->fd, F_SETFL, O_NONBLOCK);
-    }
-    ret = connect(s->fd, SAS2SA(&addr), len);
-
-    if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
-        /* Connecting in progress with timeout, wait until we have the result of
-         * the connection attempt or timeout.
-         */
-        int timeout = __waitfd(s, EVENT_ANY, &tm);
-        if (timeout == 1) {
-            errstr = ERROR_TIMEOUT;
-            goto err;
-        } else if (timeout == 0) {
-            // In case of EINPROGRESS, use getsockopt(SO_ERROR) to get the real
-            // error, when the connection attempt finished.
-            socklen_t ret_size = sizeof(ret);
-            getsockopt(s->fd, SOL_SOCKET, SO_ERROR, &ret, &ret_size);
-            if (ret == EISCONN) {
-                errno = 0;
-            } else {
-                errno = ret;
-            }
-        } else {
-            errstr = strerror(errno);
-            goto err;
-        }
-    }
-
-    if (errno) {
-        errstr = strerror(errno);
-        goto err;
-    }
+    if (__sockobj_connect(L, s, SAS2SA(&addr), len) == -1)
+        return 2;
 
     lua_pushboolean(L, 1);
     return 1;
-
-err:
-    assert(errstr);
-    __sockobj_close(L, s);
-    lua_pushnil(L);
-    lua_pushstring(L, errstr);
-    return 2;
 }
 
 static const luaL_Reg socketlib[] = {
