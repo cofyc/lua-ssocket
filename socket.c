@@ -37,23 +37,15 @@ typedef union {
 /* Convert "sockaddr_t" to "struct sockaddr *". */
 #define SAS2SA(x) (&((x)->sa))
 
-/* TCP Socket */
-struct tcpsock {
+/* Socket Object */
+struct sockobj {
     int fd;
     int sock_family;
     double sock_timeout;        /* in seconds */
     struct buffer *buf;         /* used for buffer reading */
 };
 
-/* UDP Socket */
-struct udpsock {
-    int fd;
-    int sock_family;
-    double sock_timeout;        /* in seconds */
-};
-
-#define gettcpsock(L) ((struct tcpsock *)luaL_checkudata(L, 1, TCPSOCK_TYPENAME));
-#define getudpsock(L) ((struct udpsock *)luaL_checkudata(L, 1, UDPSOCK_TYPENAME));
+#define getsockobj(L) ((struct sockobj *)luaL_checkudata(L, 1, TCPSOCK_TYPENAME));
 #define CHECK_ERRNO(expected)   (errno == expected)
 
 /* Custom socket error strings */
@@ -93,7 +85,7 @@ __setblocking(int fd, int block)
 #define EVENT_WRITABLE  POLLOUT
 #define EVENT_ANY       (POLLIN | POLLOUT)
 static int
-__waitfd(struct tcpsock *s, int event, struct timeout *tm)
+__waitfd(struct sockobj *s, int event, struct timeout *tm)
 {
     int ret;
 
@@ -208,7 +200,7 @@ __setipaddr(lua_State *L, const char *name, struct sockaddr *addr_ret, size_t ad
  * Returns 0 on success, 1 on failure.
  */
 static int
-__getsockaddrfromarg(lua_State * L, struct tcpsock *s, struct sockaddr *addr_ret,
+__getsockaddrfromarg(lua_State * L, struct sockobj *s, struct sockaddr *addr_ret,
                      socklen_t * len_ret)
 {
     if (s->sock_family == AF_INET) {
@@ -246,7 +238,7 @@ __getsockaddrfromarg(lua_State * L, struct tcpsock *s, struct sockaddr *addr_ret
  * the stack.
  */
 static int
-__makesockaddr(lua_State * L, struct tcpsock *s, struct sockaddr *addr,
+__makesockaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
                socklen_t addrlen)
 {
     lua_newtable(L);
@@ -309,7 +301,7 @@ __makesockaddr(lua_State * L, struct tcpsock *s, struct sockaddr *addr,
  * len_ret.
  */
 static int
-__getsockaddrlen(struct tcpsock *s, socklen_t * len_ret)
+__getsockaddrlen(struct sockobj *s, socklen_t * len_ret)
 {
     switch (s->sock_family) {
     case AF_UNIX:
@@ -326,11 +318,11 @@ __getsockaddrlen(struct tcpsock *s, socklen_t * len_ret)
     }
 }
 
-struct tcpsock *
+struct sockobj *
 __tcpsock_create(lua_State * L)
 {
-    struct tcpsock *s =
-        (struct tcpsock *)lua_newuserdata(L, sizeof(struct tcpsock));
+    struct sockobj *s =
+        (struct sockobj *)lua_newuserdata(L, sizeof(struct sockobj));
     if (!s) {
         return NULL;
     }
@@ -342,11 +334,11 @@ __tcpsock_create(lua_State * L)
     return s;
 }
 
-struct udpsock *
+struct sockobj *
 __udpsock_create(lua_State * L)
 {
-    struct udpsock *s =
-        (struct udpsock *)lua_newuserdata(L, sizeof(struct udpsock));
+    struct sockobj *s =
+        (struct sockobj *)lua_newuserdata(L, sizeof(struct sockobj));
     if (!s) {
         return NULL;
     }
@@ -358,7 +350,7 @@ __udpsock_create(lua_State * L)
 }
 
 static int
-__tcpsock_createfd(lua_State *L, struct tcpsock *s, int type)
+__tcpsock_createfd(lua_State *L, struct sockobj *s, int type)
 {
     int fd, on = 1;
 
@@ -384,7 +376,7 @@ __tcpsock_createfd(lua_State *L, struct tcpsock *s, int type)
 }
 
 static int
-__tcpsock_closefd(lua_State *L, struct tcpsock *s)
+__sockobj_close(lua_State *L, struct sockobj *s)
 {
     if (s->fd != -1) {
         if (close(s->fd) != 0) {
@@ -401,20 +393,6 @@ __tcpsock_closefd(lua_State *L, struct tcpsock *s)
     return 0;
 }
 
-static int
-__udpsock_closefd(lua_State *L, struct udpsock *s)
-{
-    if (s->fd != -1) {
-        if (close(s->fd) != 0) {
-            lua_pushnil(L);
-            lua_pushstring(L, strerror(errno));
-            return -1;
-        }
-        s->fd = -1;
-    }
-    return 0;
-}
-
 /**
  * tcpsock, err = socket.tcp()
  *
@@ -423,7 +401,7 @@ __udpsock_closefd(lua_State *L, struct udpsock *s)
 static int
 socket_tcp(lua_State * L)
 {
-    struct tcpsock *s = __tcpsock_create(L);
+    struct sockobj *s = __tcpsock_create(L);
     if (!s) {
         return luaL_error(L, "out of memory");
     }
@@ -438,7 +416,7 @@ socket_tcp(lua_State * L)
 static int
 socket_udp(lua_State * L)
 {
-    struct udpsock *s = __udpsock_create(L);
+    struct sockobj *s = __udpsock_create(L);
     if (!s) {
         return luaL_error(L, "out of memory");
     }
@@ -641,6 +619,38 @@ socket_getaddrinfo(lua_State * L)
     return 1;
 }
 
+/*** sock_* methods are common to tcpsocket or udpsocket ***/
+
+/**
+ * fd = sockobj:fileno()
+ *
+ * Return the integer file descriptor of the socket.
+ */
+static int
+sock_fileno(lua_State * L)
+{
+    struct sockobj *s = getsockobj(L);
+    lua_pushnumber(L, s->fd);
+    return 1;
+}
+
+/**
+ * ok, err = sockobj:close()
+ *
+ * Close the socket.
+ */
+static int
+sock_close(lua_State * L)
+{
+    struct sockobj *s = getsockobj(L);
+
+    if (__sockobj_close(L, s) == -1)
+        return 2;
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
 /**
  * ok, err = tcpsock:connect(host, port)
  * ok, err = tcpsock:connect("unix:/path/to/unix-domain.sock")
@@ -651,7 +661,7 @@ socket_getaddrinfo(lua_State * L)
 static int
 tcpsock_connect(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     sockaddr_t addr;
     socklen_t len;
     int ret;
@@ -719,7 +729,7 @@ tcpsock_connect(lua_State * L)
 
 err:
     assert(errstr);
-    __tcpsock_closefd(L, s);
+    __sockobj_close(L, s);
     lua_pushnil(L);
     lua_pushstring(L, errstr);
     return 2;
@@ -732,7 +742,7 @@ err:
 static int
 tcpsock_bind(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     sockaddr_t addr;
     socklen_t len;
     int ret;
@@ -783,7 +793,7 @@ err:
 static int
 tcpsock_listen(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     int backlog;
     int ret;
     char *errstr = NULL;
@@ -821,7 +831,7 @@ err:
 static int
 tcpsock_accept(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     sockaddr_t addr;
     socklen_t addrlen;
     int clientfd;
@@ -849,7 +859,7 @@ tcpsock_accept(lua_State * L)
         }
     }
 
-    struct tcpsock *client = __tcpsock_create(L);
+    struct sockobj *client = __tcpsock_create(L);
     client->fd = clientfd;
     client->sock_family = s->sock_family;
     if (!client) {
@@ -876,7 +886,7 @@ err:
 static int
 tcpsock_write(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     size_t len, total_sent = 0;
     const char *buf = luaL_checklstring(L, 2, &len);
     char *errstr;
@@ -942,7 +952,7 @@ err:
 static int
 tcpsock_read(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     size_t size = (int)luaL_checknumber(L, 2);
     char *errstr = NULL;
     struct buffer *buf = NULL;
@@ -1018,7 +1028,7 @@ err:
 static int
 tcpsock_readuntil_iterator(lua_State *L)
 {
-    struct tcpsock *s = lua_touserdata(L, lua_upvalueindex(1));
+    struct sockobj *s = lua_touserdata(L, lua_upvalueindex(1));
     char *errstr = NULL;
     size_t len;
     const char *pattern = lua_tolstring(L, lua_upvalueindex(2), &len);
@@ -1150,24 +1160,6 @@ tcpsock_readuntil(lua_State *L)
 }
 
 /**
- * ok, err = tcpsock:close()
- *
- * Closes the current TCP or stream unix domain socket. It returns the 1 in case of
- * success and returns nil with a string describing the error otherwise.
- */
-static int
-tcpsock_close(lua_State * L)
-{
-    struct tcpsock *s = gettcpsock(L);
-
-    if (__tcpsock_closefd(L, s) == -1)
-        return 2;
-
-    lua_pushboolean(L, 1);
-    return 1;
-}
-
-/**
  * ok, err = tcpsock:shutdown(how)
  *
  * Shut down one or both halves of the connection.
@@ -1179,7 +1171,7 @@ tcpsock_close(lua_State * L)
 static int
 tcpsock_shutdown(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     int how = luaL_checknumber(L, 2);
     int ret = shutdown(s->fd, how);
     if (ret < 0) {
@@ -1192,19 +1184,6 @@ tcpsock_shutdown(lua_State * L)
 }
 
 /**
- * fd = tcpsock:fileno()
- *
- * Return the integer file descriptor of the socket.
- */
-static int
-tcpsock_fileno(lua_State * L)
-{
-    struct tcpsock *s = gettcpsock(L);
-    lua_pushnumber(L, s->fd);
-    return 1;
-}
-
-/**
  * ok, err = tcpsock:setoption(level, optname, value)
  *
  * Set a socket option. See the Unix manual for level and option.
@@ -1212,7 +1191,7 @@ tcpsock_fileno(lua_State * L)
 static int
 tcpsock_setoption(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     int level = luaL_checknumber(L, 2);
     int optname = luaL_checknumber(L, 3);
     int flag = luaL_checknumber(L, 4);
@@ -1239,7 +1218,7 @@ tcpsock_setoption(lua_State * L)
 static int
 tcpsock_getoption(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     int level = luaL_checknumber(L, 2);
     int optname = luaL_checknumber(L, 3);
     int flag;
@@ -1278,7 +1257,7 @@ tcpsock_getoption(lua_State * L)
 static int
 tcpsock_settimeout(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     double timeout = (double)luaL_checknumber(L, 2);
     s->sock_timeout = timeout;
     if (s->fd > 0) {
@@ -1296,7 +1275,7 @@ tcpsock_settimeout(lua_State * L)
 static int
 tcpsock_gettimeout(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     lua_pushnumber(L, s->sock_timeout);
     return 1;
 }
@@ -1310,7 +1289,7 @@ tcpsock_gettimeout(lua_State * L)
 static int
 tcpsock_setblocking(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     int block = (int)luaL_checknumber(L, 2);
 
     if (block && s->sock_timeout >= 0) {
@@ -1332,7 +1311,7 @@ tcpsock_setblocking(lua_State * L)
 static int
 tcpsock_getpeername(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     sockaddr_t addr;
     socklen_t addrlen;
     int ret = 0, err = 0;
@@ -1360,7 +1339,7 @@ tcpsock_getpeername(lua_State * L)
 static int
 tcpsock_getsockname(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     sockaddr_t addr;
     socklen_t addrlen;
     int ret = 0, err = 0;
@@ -1380,28 +1359,10 @@ tcpsock_getsockname(lua_State * L)
     return __makesockaddr(L, s, SAS2SA(&addr), addrlen);
 }
 
-/**
- * ok, err = udpsock:close()
- *
- * Closes the current TCP or stream unix domain socket. It returns the 1 in case of
- * success and returns nil with a string describing the error otherwise.
- */
-static int
-udpsock_close(lua_State * L)
-{
-    struct udpsock *s = getudpsock(L);
-
-    if (__udpsock_closefd(L, s) == -1)
-        return 2;
-
-    lua_pushboolean(L, 1);
-    return 1;
-}
-
 static int
 tcpsock_tostring(lua_State * L)
 {
-    struct tcpsock *s = gettcpsock(L);
+    struct sockobj *s = getsockobj(L);
     lua_pushfstring(L, "<tcpsock: %d>", s->fd);
     return 1;
 }
@@ -1409,7 +1370,7 @@ tcpsock_tostring(lua_State * L)
 static int
 udpsock_tostring(lua_State * L)
 {
-    struct udpsock *s = getudpsock(L);
+    struct sockobj *s = getsockobj(L);
     lua_pushfstring(L, "<udpsock: %d>", s->fd);
     return 1;
 }
@@ -1423,7 +1384,7 @@ static const luaL_Reg socketlib[] = {
 };
 
 static const luaL_Reg tcpsock_methods[] = {
-    {"__gc", tcpsock_close},
+    {"__gc", sock_close},
     {"__tostring", tcpsock_tostring},
     {"connect", tcpsock_connect},
     {"bind", tcpsock_bind},
@@ -1432,9 +1393,9 @@ static const luaL_Reg tcpsock_methods[] = {
     {"write", tcpsock_write},
     {"read", tcpsock_read},
     {"readuntil", tcpsock_readuntil},
-    {"close", tcpsock_close},
     {"shutdown", tcpsock_shutdown},
-    {"fileno", tcpsock_fileno},
+    {"close", sock_close},
+    {"fileno", sock_fileno},
     {"setoption", tcpsock_setoption},
     {"getoption", tcpsock_getoption},
     {"settimeout", tcpsock_settimeout},
@@ -1446,9 +1407,10 @@ static const luaL_Reg tcpsock_methods[] = {
 };
 
 static const luaL_Reg udpsock_methods[] = {
-    {"__gc", udpsock_close},
+    {"__gc", sock_close},
     {"__tostring", udpsock_tostring},
-    {"close", udpsock_close},
+    {"close", sock_close},
+    {"fileno", sock_fileno},
     {NULL, NULL},
 };
 

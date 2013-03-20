@@ -8,7 +8,7 @@ package.cpath = package.cpath .. string.format(";%s/?.so;%s/../?.so", filedir, f
 require 'Test.More'
 local socket = require "socket"
 
-plan(16)
+plan(17)
 
 -- 1. Success connection.
 local tcpsock = socket.tcp()
@@ -16,6 +16,7 @@ local ok, err = tcpsock:connect("yechengfu.com", 80)
 is(ok, true)
 is(err, nil)
 like(tcpsock, "<tcpsock: %d+>") -- __tostring
+like(tcpsock:fileno(), "%d+")
 tcpsock:close()
 
 -- 2. Errors
