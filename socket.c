@@ -27,6 +27,16 @@
 #define TCPSOCK_TYPENAME     "TCPSOCKET*"
 #define UDPSOCK_TYPENAME     "UDPSOCKET*"
 
+/* Socket address */
+typedef union {
+  struct sockaddr sa;
+  struct sockaddr_in in;
+  struct sockaddr_un un;
+} sockaddr_t;
+
+/* Convert "sockaddr_t" to "struct sockaddr *". */
+#define SAS2SA(x) (&((x)->sa))
+
 /* TCP Socket */
 struct tcpsock {
     int fd;
@@ -134,6 +144,55 @@ __select(int nfds, fd_set * readfds, fd_set * writefds, fd_set * errorfds,
     return ret;
 }
 
+/* 
+ * Convert a string specifying a host name or one of a few symbolic names to a
+ * numeric IP address.
+ */
+static int
+__setipaddr(lua_State *L, const char *name, struct sockaddr *addr_ret, size_t addr_ret_size, int af)
+{
+    struct addrinfo hints, *res;
+    int err;
+    int d1, d2, d3, d4;
+    char ch;
+    memset((void *)addr_ret, 0, addr_ret_size);
+    
+    if (sscanf(name, "%d.%d.%d.%d%c", &d1, &d2, &d3, &d4, &ch) == 4
+        && 0 <= d1 && d1 <= 255
+        && 0 <= d2 && d2 <= 255
+        && 0 <= d3 && d3 <= 255
+        && 0 <= d4 && d4 <= 255) {
+        struct sockaddr_in *sin;
+        sin = (struct sockaddr_in *)addr_ret;
+        sin->sin_addr.s_addr = htonl(((long)d1 << 24) | ((long)d2 << 16) | ((long)d3 << 8) | ((long)d4 << 0));
+        sin->sin_family = AF_INET;
+        sin->sin_len = sizeof(*sin);
+        return 0;
+    }
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = af;
+    err = getaddrinfo(name, NULL, &hints, &res);
+    if (err) {
+        lua_pushnil(L);
+        lua_pushstring(L, gai_strerror(errno));
+        return -1;
+    }
+    if (res->ai_addrlen < addr_ret_size)
+        addr_ret_size = res->ai_addrlen;
+    memcpy((char *)addr_ret, res->ai_addr, addr_ret_size);
+    freeaddrinfo(res);
+    return 0;
+    /*struct hostent *hostinfo;*/
+    /*hostinfo = gethostbyname(host);*/
+    /*addr->sin_addr = *(struct in_addr *)hostinfo->h_addr;*/
+    /*if (hostinfo == NULL) {*/
+    /*lua_pushnil(L);*/
+    /*lua_pushfstring(L, "can't resolve: %s", host);*/
+    /*return 1;*/
+    /*}*/
+}
+
 /**
  * Parse socket address arguments.
  *
@@ -166,16 +225,11 @@ __getsockaddrfromarg(lua_State * L, struct tcpsock *s, struct sockaddr *addr_ret
         int port;
         host = luaL_checkstring(L, 2);
         port = luaL_checknumber(L, 3);
-        struct hostent *hostinfo;
-        hostinfo = gethostbyname(host);
-        if (hostinfo == NULL) {
-            lua_pushnil(L);
-            lua_pushfstring(L, "can't resolve: %s", host);
-            return 1;
+        if (__setipaddr(L, host, (struct sockaddr *)addr, sizeof(*addr), AF_INET) != 0) {
+            return 2;
         }
         addr->sin_family = AF_INET;
         addr->sin_port = htons(port);
-        addr->sin_addr = *(struct in_addr *)hostinfo->h_addr;
         *len_ret = sizeof(*addr);
     } else if (s->sock_family == AF_UNIX) {
         struct sockaddr_un *addr = (struct sockaddr_un *)addr_ret;
@@ -196,8 +250,8 @@ __getsockaddrfromarg(lua_State * L, struct tcpsock *s, struct sockaddr *addr_ret
  * address it really is.
  *
  * In case of success, a table associated with address info pushed on the stack;
- * in case of error, a nil value with a string describing the error pushed.
- * Returns number of value pushed on the stack.
+ * In case of error, a nil value with a string describing the error pushed on
+ * the stack.
  */
 static int
 __makesockaddr(lua_State * L, struct tcpsock *s, struct sockaddr *addr,
@@ -229,11 +283,31 @@ __makesockaddr(lua_State * L, struct tcpsock *s, struct sockaddr *addr,
             lua_settable(L, -3);
             return 1;
         }
+    case AF_UNIX:
+        {
+            struct sockaddr_un *a = (struct sockaddr_un *)addr;
+#ifdef linux
+            if (a->sun_path[0] == 0) { /* Linux abstract namespace */
+                addrlen -= offset(struct sockaddr_un, sun_path);
+                lua_pushlstring(L, a->sun_path, addrlen);
+            } else
+#endif
+            {
+                /* regular NULL-terminated string */
+                lua_pushstring(L, a->sun_path);
+            }
+            return 1;
+        }
     default:
-        lua_settop(L, 0);
-        lua_pushnil(L);
-        lua_pushstring(L, gai_strerror(errno));
-        return 2;
+        /* If we don't know the address family, return it as an {int, bytes}
+         * table. */
+        lua_pushnumber(L, 1);
+        lua_pushnumber(L, addr->sa_family);
+        lua_settable(L, -3);
+        lua_pushnumber(L, 2);
+        lua_pushstring(L, addr->sa_data);
+        lua_settable(L, -3);
+        return 1;
     }
 }
 
@@ -572,9 +646,7 @@ static int
 tcpsock_connect(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
-    struct sockaddr_in addr_in;
-    struct sockaddr_un addr_un;
-    struct sockaddr *addr = NULL;
+    sockaddr_t addr;
     socklen_t len;
     int ret;
     char *errstr = NULL;
@@ -590,13 +662,11 @@ tcpsock_connect(lua_State * L)
 
     if (n == 3) {
         s->sock_family = AF_INET;
-        addr = (struct sockaddr *)&addr_in;
     } else if (n == 2) {
         s->sock_family = AF_UNIX;
-        addr = (struct sockaddr *)&addr_un;
     }
 
-    if (__getsockaddrfromarg(L, s, addr, &len)) {
+    if (__getsockaddrfromarg(L, s, SAS2SA(&addr), &len)) {
         return 2;
     }
 
@@ -607,7 +677,7 @@ tcpsock_connect(lua_State * L)
     if (s->sock_timeout > 0) {
         fcntl(s->fd, F_SETFL, O_NONBLOCK);
     }
-    ret = connect(s->fd, addr, len);
+    ret = connect(s->fd, SAS2SA(&addr), len);
 
     if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
         /* Connecting in progress with timeout, wait until we have the result of
@@ -657,9 +727,7 @@ static int
 tcpsock_bind(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
-    struct sockaddr_in addr_in;
-    struct sockaddr_un addr_un;
-    struct sockaddr *addr = NULL;
+    sockaddr_t addr;
     socklen_t len;
     int ret;
     char *errstr = NULL;
@@ -672,20 +740,18 @@ tcpsock_bind(lua_State * L)
 
     if (n == 3) {
         s->sock_family = AF_INET;
-        addr = (struct sockaddr *)&addr_in;
     } else if (n == 2) {
         s->sock_family = AF_UNIX;
-        addr = (struct sockaddr *)&addr_un;
     }
 
-    if (__getsockaddrfromarg(L, s, addr, &len)) {
+    if (__getsockaddrfromarg(L, s, SAS2SA(&addr), &len)) {
         return 2;
     }
 
     if (__tcpsock_createfd(L, s, SOCK_STREAM) == -1)
         return 2;
 
-    ret = bind(s->fd, addr, len);
+    ret = bind(s->fd, SAS2SA(&addr), len);
     if (ret < 0) {
         errstr = strerror(errno);
         goto err;
@@ -750,7 +816,7 @@ static int
 tcpsock_accept(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
-    struct sockaddr addr;
+    sockaddr_t addr;
     socklen_t addrlen;
     int clientfd;
     char *errstr = NULL;
@@ -770,7 +836,7 @@ tcpsock_accept(lua_State * L)
         errstr = ERROR_TIMEOUT;
         goto err;
     } else {
-        clientfd = accept(s->fd, &addr, &addrlen);
+        clientfd = accept(s->fd, SAS2SA(&addr), &addrlen);
         if (clientfd == -1) {
             errstr = strerror(errno);
             goto err;
@@ -1261,7 +1327,7 @@ static int
 tcpsock_getpeername(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
-    struct sockaddr addr;
+    sockaddr_t addr;
     socklen_t addrlen;
     int ret = 0, err = 0;
     if (!__getsockaddrlen(s, &addrlen)) {
@@ -1270,14 +1336,14 @@ tcpsock_getpeername(lua_State * L)
         return 2;
     }
     memset(&addr, 0, addrlen);
-    ret = getpeername(s->fd, &addr, &addrlen);
+    ret = getpeername(s->fd, SAS2SA(&addr), &addrlen);
     if (ret < 0) {
         err = errno;
         lua_pushnil(L);
         lua_pushstring(L, strerror(err));
         return 2;
     }
-    return __makesockaddr(L, s, &addr, addrlen);
+    return __makesockaddr(L, s, SAS2SA(&addr), addrlen);
 }
 
 /**
@@ -1289,7 +1355,7 @@ static int
 tcpsock_getsockname(lua_State * L)
 {
     struct tcpsock *s = tolsocket(L);
-    struct sockaddr addr;
+    sockaddr_t addr;
     socklen_t addrlen;
     int ret = 0, err = 0;
     if (!__getsockaddrlen(s, &addrlen)) {
@@ -1298,14 +1364,14 @@ tcpsock_getsockname(lua_State * L)
         return 2;
     }
     memset(&addr, 0, addrlen);
-    ret = getsockname(s->fd, &addr, &addrlen);
+    ret = getsockname(s->fd, SAS2SA(&addr), &addrlen);
     if (ret < 0) {
         err = errno;
         lua_pushnil(L);
         lua_pushstring(L, strerror(err));
         return 2;
     }
-    return __makesockaddr(L, s, &addr, addrlen);
+    return __makesockaddr(L, s, SAS2SA(&addr), addrlen);
 }
 
 static int

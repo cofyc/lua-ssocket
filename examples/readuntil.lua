@@ -22,4 +22,3 @@ while true do
   print("Line:", data)
   table.insert(slices, data)
 end
---print(table.concat(slices))

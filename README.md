@@ -52,12 +52,12 @@ TCP Socket Object
 * tcpsock:connect
 
     `ok, err = tcpsock:connect(host, port)`
-    `ok, err = tcpsock:connect(unix_socket_path)`
+    `ok, err = tcpsock:connect("unix:/path/to/unix-domain.sock")`
 
 * tcpsock:bind
 
     `ok, err = tcpsock:bind(host, port)`
-    `ok, err = tcpsock:bind(unix_socket_path)`
+    `ok, err = tcpsock:bind("unix:/path/to/unix-domain.sock")`
 
 * tcpsock:listen
 
@@ -84,7 +84,7 @@ TCP Socket Object
 
 * tcpsock:readuntil
 
-    `iterator = tcpsock:readuntil(pattern, inclusive?)`
+    `iterator, err = tcpsock:readuntil(pattern, inclusive?)`
 
     This method returns an iterator function that can be called to read the data
     stream until it sees the specified pattern or an error occurs.
