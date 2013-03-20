@@ -110,7 +110,7 @@ TCP Socket Object
 
 * tcpsock:close
   
-    `ok, err = sock:close()`
+    `ok, err = tcpsock:close()`
 
   Closes the current TCP or stream unix domain socket. It returns the 1 in case
   of success and returns nil with a string describing the error otherwise.
@@ -153,6 +153,17 @@ TCP Socket Object
 
 UDP Socket Object
 -----------------
+
+* udpsock:close
+  
+    `ok, err = udpsock:close()`
+
+  Closes the current UDP or datagram unix domain socket. It returns the 1 in
+  case of success and returns nil with a string describing the error otherwise.
+
+* udpsock:fileno
+
+    `fd = udpsock:fileno()`
 
 Contants
 --------

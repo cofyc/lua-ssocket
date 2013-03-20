@@ -45,7 +45,7 @@ struct sockobj {
     struct buffer *buf;         /* used for buffer reading */
 };
 
-#define getsockobj(L) ((struct sockobj *)luaL_checkudata(L, 1, TCPSOCK_TYPENAME));
+#define getsockobj(L) ((struct sockobj *)lua_touserdata(L, 1));
 #define CHECK_ERRNO(expected)   (errno == expected)
 
 /* Custom socket error strings */
@@ -345,6 +345,7 @@ __udpsock_create(lua_State * L)
     s->fd = -1;
     s->sock_timeout = 0;
     s->sock_family = 0;
+    s->buf = NULL;
     luaL_setmetatable(L, UDPSOCK_TYPENAME);
     return s;
 }
@@ -488,7 +489,7 @@ __return_fd(lua_State * L, fd_set * set, int max_fd)
  * readfds, writefds, err = socket.select(readfds, writefds[, timeout=-1])
  *
  *  `readfds`, `writefds` are all table of fds (which was returned from
- *  sock:fileno()).
+ *  sockobj:fileno()).
  */
 static int
 socket_select(lua_State * L)
@@ -648,6 +649,68 @@ sock_close(lua_State * L)
         return 2;
 
     lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int
+sock_tostring(lua_State * L)
+{
+    struct sockobj *s = getsockobj(L);
+    assert(lua_getmetatable(L, -1));
+    luaL_getmetatable(L, TCPSOCK_TYPENAME);
+    if (lua_rawequal(L, -1, -2)) {
+        lua_pop(L, 2);
+        lua_pushfstring(L, "<tcpsock: %d>", s->fd);
+    } else {
+        lua_pop(L, 2);
+        lua_pushfstring(L, "<udpsock: %d>", s->fd);
+    }
+    return 1;
+}
+
+/**
+ * sockobj:settimeout(timeout)
+ *
+ * Set the timeout value in seconds for subsequent socket operations.
+ *
+ * A socket object can be in one of three modes: blocking, non-blocking, or
+ * timeout. Sockets are by default always created in blocking mode.
+ *  - In blocking mode, operations block untile complete or the system returns an
+ *  error (such as connection timed out).
+ *  - In non-blocking mode, operations fail (with an error that is unfortunately
+ *  system-dependent) if they cannot be completed immediately.
+ *  - In timeout mode, operations fail if they cannot be completed within the
+ *  timeout specified for the socket or if the system returns an error. (At the
+ *  os level, sockets in timeout mode are internally set in non-blocking mode.
+ *
+ * Argument:
+ *  < 0     -- no timeout, blocking node; same as sock:setblocking(1)
+ *  = 0     -- non-blocking mode; same as sock:setblocking(0)
+ *  > 0     -- timeout mode (non-blocking mode)
+ */
+static int
+sock_settimeout(lua_State * L)
+{
+    struct sockobj *s = getsockobj(L);
+    double timeout = (double)luaL_checknumber(L, 2);
+    s->sock_timeout = timeout;
+    if (s->fd > 0) {
+        __setblocking(s->fd, timeout < 0.0);
+    }
+    return 0;
+}
+
+/*
+ * timeout = sockobj:gettimeout()
+ *
+ * Returns the timeout in seconds (number) associated with socket.
+ * A negative timeout indicates that timeout is disabled.
+ */
+static int
+sock_gettimeout(lua_State * L)
+{
+    struct sockobj *s = getsockobj(L);
+    lua_pushnumber(L, s->sock_timeout);
     return 1;
 }
 
@@ -1132,7 +1195,7 @@ err:
 }
 
 /**
- * sock:readuntil(pattern, inclusive?)
+ * iterator, err = tcpsock:readuntil(pattern, inclusive?)
  */
 static int
 tcpsock_readuntil(lua_State *L)
@@ -1235,52 +1298,6 @@ tcpsock_getoption(lua_State * L)
 }
 
 /**
- * sock:settimeout(timeout)
- *
- * Set the timeout value in seconds for subsequent socket operations.
- *
- * A socket object can be in one of three modes: blocking, non-blocking, or
- * timeout. Sockets are by default always created in blocking mode.
- *  - In blocking mode, operations block untile complete or the system returns an
- *  error (such as connection timed out).
- *  - In non-blocking mode, operations fail (with an error that is unfortunately
- *  system-dependent) if they cannot be completed immediately.
- *  - In timeout mode, operations fail if they cannot be completed within the
- *  timeout specified for the socket or if the system returns an error. (At the
- *  os level, sockets in timeout mode are internally set in non-blocking mode.
- *
- * Argument:
- *  < 0     -- no timeout, blocking node; same as sock:setblocking(1)
- *  = 0     -- non-blocking mode; same as sock:setblocking(0)
- *  > 0     -- timeout mode (non-blocking mode)
- */
-static int
-tcpsock_settimeout(lua_State * L)
-{
-    struct sockobj *s = getsockobj(L);
-    double timeout = (double)luaL_checknumber(L, 2);
-    s->sock_timeout = timeout;
-    if (s->fd > 0) {
-        __setblocking(s->fd, timeout < 0.0);
-    }
-    return 0;
-}
-
-/*
- * timeout = tcpsock:gettimeout()
- *
- * Returns the timeout in seconds (number) associated with socket.
- * A negative timeout indicates that timeout is disabled.
- */
-static int
-tcpsock_gettimeout(lua_State * L)
-{
-    struct sockobj *s = getsockobj(L);
-    lua_pushnumber(L, s->sock_timeout);
-    return 1;
-}
-
-/**
  * sock:setblocking(block)
  *
  * 1/true   - blocking mode
@@ -1359,22 +1376,6 @@ tcpsock_getsockname(lua_State * L)
     return __makesockaddr(L, s, SAS2SA(&addr), addrlen);
 }
 
-static int
-tcpsock_tostring(lua_State * L)
-{
-    struct sockobj *s = getsockobj(L);
-    lua_pushfstring(L, "<tcpsock: %d>", s->fd);
-    return 1;
-}
-
-static int
-udpsock_tostring(lua_State * L)
-{
-    struct sockobj *s = getsockobj(L);
-    lua_pushfstring(L, "<udpsock: %d>", s->fd);
-    return 1;
-}
-
 static const luaL_Reg socketlib[] = {
     {"tcp", socket_tcp},
     {"udp", socket_udp},
@@ -1383,9 +1384,17 @@ static const luaL_Reg socketlib[] = {
     {NULL, NULL},
 };
 
-static const luaL_Reg tcpsock_methods[] = {
+static const luaL_Reg sock_methods[] = {
     {"__gc", sock_close},
-    {"__tostring", tcpsock_tostring},
+    {"__tostring", sock_tostring},
+    {"close", sock_close},
+    {"fileno", sock_fileno},
+    {"settimeout", sock_settimeout},
+    {"gettimeout", sock_gettimeout},
+    {NULL, NULL},
+};
+
+static const luaL_Reg tcpsock_methods[] = {
     {"connect", tcpsock_connect},
     {"bind", tcpsock_bind},
     {"listen", tcpsock_listen},
@@ -1394,12 +1403,8 @@ static const luaL_Reg tcpsock_methods[] = {
     {"read", tcpsock_read},
     {"readuntil", tcpsock_readuntil},
     {"shutdown", tcpsock_shutdown},
-    {"close", sock_close},
-    {"fileno", sock_fileno},
     {"setoption", tcpsock_setoption},
     {"getoption", tcpsock_getoption},
-    {"settimeout", tcpsock_settimeout},
-    {"gettimeout", tcpsock_gettimeout},
     {"setblocking", tcpsock_setblocking},
     {"getpeername", tcpsock_getpeername},
     {"getsockname", tcpsock_getsockname},
@@ -1407,10 +1412,6 @@ static const luaL_Reg tcpsock_methods[] = {
 };
 
 static const luaL_Reg udpsock_methods[] = {
-    {"__gc", sock_close},
-    {"__tostring", udpsock_tostring},
-    {"close", sock_close},
-    {"fileno", sock_fileno},
     {NULL, NULL},
 };
 
@@ -1446,6 +1447,7 @@ luaopen_socket(lua_State * L)
     luaL_newmetatable(L, TCPSOCK_TYPENAME);
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");     /* metable.__index = metatable */
+    luaL_setfuncs(L, sock_methods, 0);
     luaL_setfuncs(L, tcpsock_methods, 0);
     lua_pop(L, 1);
 
@@ -1453,6 +1455,7 @@ luaopen_socket(lua_State * L)
     luaL_newmetatable(L, UDPSOCK_TYPENAME);
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");     /* metable.__index = metatable */
+    luaL_setfuncs(L, sock_methods, 0);
     luaL_setfuncs(L, udpsock_methods, 0);
     lua_pop(L, 1);
 
