@@ -8,7 +8,7 @@ package.cpath = string.format(";%s/?.so;%s/../?.so", filedir, filedir) .. packag
 require 'Test.More'
 local socket = require "socket"
 
-plan(26)
+plan(29)
 
 -- 1. Success connection.
 local tcpsock, err = socket.tcp()
@@ -60,11 +60,17 @@ local value = tcpsock:getopt(socket.OPT_TCP_KEEPALIVE)
 is(value, false)
 local value = tcpsock:getopt(socket.OPT_TCP_NODELAY)
 is(value, false)
+local value = tcpsock:getopt(socket.OPT_TCP_REUSEADDR)
+is(value, false)
 ok, err = tcpsock:setopt(socket.OPT_TCP_KEEPALIVE, true)
 is(ok, true)
 ok, err = tcpsock:setopt(socket.OPT_TCP_NODELAY, true)
 is(ok, true)
+ok, err = tcpsock:setopt(socket.OPT_TCP_REUSEADDR, true)
+is(ok, true)
 local value = tcpsock:getopt(socket.OPT_TCP_KEEPALIVE)
 is(value, true)
 local value = tcpsock:getopt(socket.OPT_TCP_NODELAY)
+is(value, true)
+local value = tcpsock:getopt(socket.OPT_TCP_REUSEADDR)
 is(value, true)

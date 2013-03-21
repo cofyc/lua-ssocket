@@ -183,7 +183,9 @@ UDP Socket Object
 
 * udpsock:readfrom (TODO)
 
-* udpsock:write (TODO)
+* udpsock:write
+
+    `bytes, err = tcpsock:write(data)`
 
 * udpsock:writeto (TODO)
 
@@ -213,6 +215,7 @@ OPT_* setopt and getopt parameters
 
   * socket.OPT_TCP_NODELAY
   * socket.OPT_TCP_KEEPALIVE
+  * socket.OPT_TCP_REUSEADDR
 
 SHUT_* tcpsock:shutdown() parameters
 

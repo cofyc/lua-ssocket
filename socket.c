@@ -56,6 +56,7 @@ struct sockobj {
 /* Options */
 #define OPT_TCP_NODELAY   "tcp_nodelay"
 #define OPT_TCP_KEEPALIVE "tcp_keepalive"
+#define OPT_TCP_REUSEADDR "tcp_reuseaddr"
 
 #define RECV_BUFSIZE 8192
 
@@ -135,12 +136,35 @@ __select(int nfds, fd_set * readfds, fd_set * writefds, fd_set * errorfds,
     return ret;
 }
 
+/**
+ * Get the address length according to the socket object's address family.
+ * Return 1 if the family is known, 0 otherwise. The length is returned through
+ * len_ret.
+ */
+static int
+__getsockaddrlen(struct sockobj *s, socklen_t * len_ret)
+{
+    switch (s->sock_family) {
+    case AF_UNIX:
+        *len_ret = sizeof(struct sockaddr_un);
+        return 1;
+    case AF_INET:
+        *len_ret = sizeof(struct sockaddr_in);
+        return 1;
+    case AF_INET6:
+        *len_ret = sizeof(struct sockaddr_in6);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 /* 
  * Convert a string specifying a host name or one of a few symbolic names to a
  * numeric IP address.
  */
 static int
-__setipaddr(lua_State *L, const char *name, struct sockaddr *addr_ret, size_t addr_ret_size, int af)
+__sockobj_setipaddr(lua_State *L, const char *name, struct sockaddr *addr_ret, size_t addr_ret_size, int af)
 {
     struct addrinfo hints, *res;
     int err;
@@ -199,7 +223,7 @@ __setipaddr(lua_State *L, const char *name, struct sockaddr *addr_ret, size_t ad
  * Returns 0 on success, 1 on failure.
  */
 static int
-__getsockaddrfromarg(lua_State * L, struct sockobj *s, struct sockaddr *addr_ret,
+__sockobj_getaddrfromarg(lua_State * L, struct sockobj *s, struct sockaddr *addr_ret,
                      socklen_t * len_ret)
 {
     if (s->sock_family == AF_INET) {
@@ -208,7 +232,7 @@ __getsockaddrfromarg(lua_State * L, struct sockobj *s, struct sockaddr *addr_ret
         int port;
         host = luaL_checkstring(L, 2);
         port = luaL_checknumber(L, 3);
-        if (__setipaddr(L, host, (struct sockaddr *)addr, sizeof(*addr), AF_INET) != 0) {
+        if (__sockobj_setipaddr(L, host, (struct sockaddr *)addr, sizeof(*addr), AF_INET) != 0) {
             return 2;
         }
         addr->sin_family = AF_INET;
@@ -237,7 +261,7 @@ __getsockaddrfromarg(lua_State * L, struct sockobj *s, struct sockaddr *addr_ret
  * the stack.
  */
 static int
-__makesockaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
+__sockobj_makeaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
                socklen_t addrlen)
 {
     lua_newtable(L);
@@ -295,29 +319,6 @@ __makesockaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
 }
 
 /**
- * Get the address length according to the socket object's address family.
- * Return 1 if the family is known, 0 otherwise. The length is returned through
- * len_ret.
- */
-static int
-__getsockaddrlen(struct sockobj *s, socklen_t * len_ret)
-{
-    switch (s->sock_family) {
-    case AF_UNIX:
-        *len_ret = sizeof(struct sockaddr_un);
-        return 1;
-    case AF_INET:
-        *len_ret = sizeof(struct sockaddr_in);
-        return 1;
-    case AF_INET6:
-        *len_ret = sizeof(struct sockaddr_in6);
-        return 1;
-    default:
-        return 0;
-    }
-}
-
-/**
  * Create socket object.
  */
 struct sockobj *
@@ -342,7 +343,7 @@ __sockobj_create(lua_State *L, const char *tname)
 static int
 __sockobj_createsocket(lua_State *L, struct sockobj *s, int type)
 {
-    int fd, on = 1;
+    int fd;
 
     if ((fd = socket(s->sock_family, type, 0)) == -1) {
         lua_pushnil(L);
@@ -351,13 +352,6 @@ __sockobj_createsocket(lua_State *L, struct sockobj *s, int type)
     }
 
     s->fd = fd;
-
-    // reuse address
-    if (setsockopt(s->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) == -1) {
-        lua_pushnil(L);
-        lua_pushfstring(L, "setsockopt SO_REUSEADDR: %s", strerror(errno));
-        return -1;
-    }
 
     // 100% non-blocking
     __setblocking(s->fd, 0);
@@ -839,7 +833,7 @@ tcpsock_connect(lua_State * L)
         s->sock_family = AF_UNIX;
     }
 
-    if (__getsockaddrfromarg(L, s, SAS2SA(&addr), &len)) {
+    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len)) {
         return 2;
     }
 
@@ -878,7 +872,7 @@ tcpsock_bind(lua_State * L)
         s->sock_family = AF_UNIX;
     }
 
-    if (__getsockaddrfromarg(L, s, SAS2SA(&addr), &len)) {
+    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len)) {
         return 2;
     }
 
@@ -1271,6 +1265,9 @@ tcpsock_setopt(lua_State * L)
     } else if (!strcmp(opt, OPT_TCP_NODELAY)) {
         level = IPPROTO_TCP;
         optname = TCP_NODELAY;
+    } else if (!strcmp(opt, OPT_TCP_REUSEADDR)) {
+        level = SOL_SOCKET;
+        optname = SO_REUSEADDR;
     } else {
         return luaL_error(L, "unexpected option: %s", opt);
     }
@@ -1303,6 +1300,9 @@ tcpsock_getopt(lua_State * L)
     } else if (!strcmp(opt, OPT_TCP_NODELAY)) {
         level = IPPROTO_TCP;
         optname = TCP_NODELAY;
+    } else if (!strcmp(opt, OPT_TCP_REUSEADDR)) {
+        level = SOL_SOCKET;
+        optname = SO_REUSEADDR;
     } else {
         return luaL_error(L, "unexpected option: %s", opt);
     }
@@ -1341,7 +1341,7 @@ tcpsock_getpeername(lua_State * L)
         lua_pushstring(L, strerror(err));
         return 2;
     }
-    return __makesockaddr(L, s, SAS2SA(&addr), addrlen);
+    return __sockobj_makeaddr(L, s, SAS2SA(&addr), addrlen);
 }
 
 /**
@@ -1369,7 +1369,7 @@ tcpsock_getsockname(lua_State * L)
         lua_pushstring(L, strerror(err));
         return 2;
     }
-    return __makesockaddr(L, s, SAS2SA(&addr), addrlen);
+    return __sockobj_makeaddr(L, s, SAS2SA(&addr), addrlen);
 }
 
 /**
@@ -1401,7 +1401,7 @@ udpsock_connect(lua_State * L)
         s->sock_family = AF_UNIX;
     }
 
-    if (__getsockaddrfromarg(L, s, SAS2SA(&addr), &len)) {
+    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len)) {
         return 2;
     }
 
@@ -1493,6 +1493,7 @@ luaopen_socket(lua_State * L)
     // OPT_* options
     ADD_STR_CONST(OPT_TCP_NODELAY);
     ADD_STR_CONST(OPT_TCP_KEEPALIVE);
+    ADD_STR_CONST(OPT_TCP_REUSEADDR);
 
     // SHUT_* sock:shutdown() parameters
     ADD_NUM_CONST(SHUT_RD);
