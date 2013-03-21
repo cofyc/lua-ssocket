@@ -402,9 +402,6 @@ __sockobj_connect(lua_State *L, struct sockobj *s, struct sockaddr *addr, sockle
     timeout_init(&tm, s->sock_timeout);
 
     errno = 0;
-    if (s->sock_timeout > 0) {
-        fcntl(s->fd, F_SETFL, O_NONBLOCK);
-    }
     ret = connect(s->fd, addr, len);
 
     if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
@@ -727,7 +724,7 @@ sockobj_tostring(lua_State * L)
  * A socket object can be in one of three modes: blocking, non-blocking, or
  * timeout. Sockets are by default always created in blocking mode.
  *  - In blocking mode, operations block untile complete or the system returns an
- *  error (such as connection timed out).
+ *  error.
  *  - In non-blocking mode, operations fail (with an error that is unfortunately
  *  system-dependent) if they cannot be completed immediately.
  *  - In timeout mode, operations fail if they cannot be completed within the
@@ -735,9 +732,9 @@ sockobj_tostring(lua_State * L)
  *  os level, sockets in timeout mode are internally set in non-blocking mode.
  *
  * Argument:
- *  < 0     -- no timeout, blocking node; same as sock:setblocking(1)
- *  = 0     -- non-blocking mode; same as sock:setblocking(0)
- *  > 0     -- timeout mode (non-blocking mode)
+ *  < 0     -- blocking mode (Default)
+ *  = 0     -- non-blocking mode
+ *  > 0     -- timeout mode (also non-blocking mode with timeout specified)
  */
 static int
 sockobj_settimeout(lua_State * L)
