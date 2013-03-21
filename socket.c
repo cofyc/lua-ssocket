@@ -439,6 +439,61 @@ err:
     return -1;
 }
 
+static int
+__sockobj_send(lua_State *L, struct sockobj *s, const char *buf, size_t len) {
+    char *errstr;
+    size_t total_sent = 0;
+    if (s->fd == -1) {
+        errstr = ERROR_CLOSED;
+        goto err;
+    }
+
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+    while (1) {
+        errno = 0;
+        int timeout = __waitfd(s, EVENT_WRITABLE, &tm);
+        if (timeout == -1) {
+            errstr = strerror(errno);
+            goto err;
+        } else if (timeout == 1) {
+            errstr = ERROR_TIMEOUT;
+            goto err;
+        } else {
+            int n = send(s->fd, buf + total_sent, len - total_sent, 0);
+            if (n < 0) {
+                switch (errno) {
+                case EINTR:
+                case EAGAIN:
+                    continue;
+                case EPIPE:
+                    // EPIPE means the connection was closed.
+                    errstr = ERROR_CLOSED;
+                    goto err;
+                default:
+                    errstr = strerror(errno);
+                    goto err;
+                }
+            } else {
+                total_sent += n;
+                if (len - total_sent <= 0) {
+                    break;
+                }
+            }
+        }
+    }
+
+    assert(total_sent == len);
+    lua_pushinteger(L, total_sent);
+    return 0;
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return -1;
+}
+
 /**
  * tcpsock, err = socket.tcp()
  *
@@ -950,59 +1005,13 @@ static int
 tcpsock_write(lua_State * L)
 {
     struct sockobj *s = getsockobj(L);
-    size_t len, total_sent = 0;
+    size_t len;
     const char *buf = luaL_checklstring(L, 2, &len);
-    char *errstr;
 
-    if (s->fd == -1) {
-        errstr = ERROR_CLOSED;
-        goto err;
-    }
+    if (__sockobj_send(L, s, buf, len) == -1)
+        return 2;
 
-    struct timeout tm;
-    timeout_init(&tm, s->sock_timeout);
-    while (1) {
-        errno = 0;
-        int timeout = __waitfd(s, EVENT_WRITABLE, &tm);
-        if (timeout == -1) {
-            errstr = strerror(errno);
-            goto err;
-        } else if (timeout == 1) {
-            errstr = ERROR_TIMEOUT;
-            goto err;
-        } else {
-            int n = send(s->fd, buf + total_sent, len - total_sent, 0);
-            if (n < 0) {
-                switch (errno) {
-                case EINTR:
-                case EAGAIN:
-                    continue;
-                case EPIPE:
-                    // EPIPE means the connection was closed.
-                    errstr = ERROR_CLOSED;
-                    goto err;
-                default:
-                    errstr = strerror(errno);
-                    goto err;
-                }
-            } else {
-                total_sent += n;
-                if (len - total_sent <= 0) {
-                    break;
-                }
-            }
-        }
-    }
-
-    assert(total_sent == len);
-    lua_pushinteger(L, total_sent);
     return 1;
-
-err:
-    assert(errstr);
-    lua_pushnil(L);
-    lua_pushstring(L, errstr);
-    return 2;
 }
 
 /**
@@ -1407,16 +1416,24 @@ udpsock_connect(lua_State * L)
 }
 
 /**
- * bytes, err = udpsock:send(data)
+ * bytes, err = udpsock:write(data)
  *
- * Sends data on the current UDP or datagram unix domain socket object.
+ * Writes data on the current UDP or datagram unix domain socket object.
  *
  * In case of success, it returns 1. Otherwise, it returns nil and a string
  * describing the error.
  */
 static int
-udpsock_send(lua_State * L)
+udpsock_write(lua_State * L)
 {
+    struct sockobj *s = getsockobj(L);
+    size_t len;
+    const char *buf = luaL_checklstring(L, 2, &len);
+
+    if (__sockobj_send(L, s, buf, len) == -1)
+        return 2;
+
+    return 1;
 }
 
 static const luaL_Reg socketlib[] = {
@@ -1455,6 +1472,7 @@ static const luaL_Reg tcpsock_methods[] = {
 
 static const luaL_Reg udpsock_methods[] = {
     {"connect", udpsock_connect},
+    {"write", udpsock_write},
     {NULL, NULL},
 };
 

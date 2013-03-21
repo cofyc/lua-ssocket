@@ -8,14 +8,13 @@ package.cpath = string.format(";%s/?.so;%s/../?.so", filedir, filedir) .. packag
 require 'Test.More'
 local socket = require "socket"
 
-plan(4)
+plan(5)
 
 -- 1. Basic
 local udpsock = socket.udp()
-ok, err = udpsock:connect('127.0.0.1', 8888)
+ok, err = udpsock:connect('localhost', 8888)
 is(ok, true)
 is(err, nil)
 like(udpsock, "<udpsock: %d+>") -- __tostring
-
---udpsock:send("OK")
+is(udpsock:write("OK"), 2)
 is(udpsock:close(), true)
