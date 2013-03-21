@@ -7,10 +7,7 @@ package.cpath = string.format(";%s/?.so;%s/../?.so", filedir, filedir) .. packag
 
 local socket = require "socket"
 
-TEST_UNIX_SOCK = "/tmp/test-lua52-socket.sock"
-
-os.remove(TEST_UNIX_SOCK)
-local tcpsock = socket.tcp()
-local ok, err = tcpsock:bind(TEST_UNIX_SOCK)
-tcpsock:listen(5)
-conn, err = tcpsock:accept()
+local udpsock = socket.udp()
+local ok, err = udpsock:bind("127.0.0.1", 8888)
+data, err = udpsock:recv(8192)
+print(data)

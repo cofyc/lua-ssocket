@@ -179,15 +179,15 @@ UDP Socket Object
     `ok, err = udpsock:bind(host, port)`
     `ok, err = udpsock:bind("unix:/path/to/unix-domain.sock")`
 
-* udpsock:read (TODO)
+* udpsock:recv (TODO)
 
-* udpsock:readfrom (TODO)
+* udpsock:recvfrom (TODO)
 
-* udpsock:write
+* udpsock:send
 
     `bytes, err = tcpsock:write(data)`
 
-* udpsock:writeto (TODO)
+* udpsock:sendto (TODO)
 
 * udpsock:close
   

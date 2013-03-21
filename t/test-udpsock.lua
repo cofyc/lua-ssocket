@@ -14,7 +14,18 @@ plan(5)
 local udpsock = socket.udp()
 ok, err = udpsock:connect('localhost', 8888)
 is(ok, true)
-is(err, nil)
 like(udpsock, "<udpsock: %d+>") -- __tostring
-is(udpsock:write("OK"), 2)
+is(udpsock:send("OK"), 2)
 is(udpsock:close(), true)
+udpsock:close()
+
+-- 2. Exchange datagram packet
+local recvsock = socket.udp()
+ok, err = recvsock:bind('localhost', 8888)
+is(ok, true)
+local sendsock = socket.udp()
+sendsock:connect('localhost', 8888)
+local packet_data = "A udp packet."
+is(sendsock:send(packet_data), #packet_data)
+data, err = recvsock:recv(8192)
+is(data, packet_data)
