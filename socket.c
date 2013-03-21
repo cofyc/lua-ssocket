@@ -57,7 +57,6 @@ struct sockobj {
 #define OPT_TCP_NODELAY   "tcp_nodelay"
 #define OPT_TCP_KEEPALIVE "tcp_keepalive"
 
-#define SEND_BUFSIZE 8192
 #define RECV_BUFSIZE 8192
 
 /**
@@ -972,11 +971,7 @@ tcpsock_write(lua_State * L)
             errstr = ERROR_TIMEOUT;
             goto err;
         } else {
-            size_t send_size = len - total_sent;
-            if (send_size > SEND_BUFSIZE) {
-                send_size = SEND_BUFSIZE;
-            }
-            int n = send(s->fd, buf + total_sent, send_size, 0);
+            int n = send(s->fd, buf + total_sent, len - total_sent, 0);
             if (n < 0) {
                 switch (errno) {
                 case EINTR:
