@@ -722,7 +722,7 @@ sockobj_tostring(lua_State * L)
  * Set the timeout value in seconds for subsequent socket operations.
  *
  * A socket object can be in one of three modes: blocking, non-blocking, or
- * timeout. Sockets are by default always created in blocking mode.
+ * timeout. 
  *  - In blocking mode, operations block untile complete or the system returns an
  *  error.
  *  - In non-blocking mode, operations fail (with an error that is unfortunately
@@ -731,8 +731,10 @@ sockobj_tostring(lua_State * L)
  *  timeout specified for the socket or if the system returns an error. (At the
  *  os level, sockets in timeout mode are internally set in non-blocking mode.
  *
+ * Sockets are by default created in blocking mode.
+ *
  * Argument:
- *  < 0     -- blocking mode (Default)
+ *  < 0     -- blocking mode
  *  = 0     -- non-blocking mode
  *  > 0     -- timeout mode (also non-blocking mode with timeout specified)
  */

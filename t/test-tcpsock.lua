@@ -8,7 +8,7 @@ package.cpath = string.format(";%s/?.so;%s/../?.so", filedir, filedir) .. packag
 require 'Test.More'
 local socket = require "socket"
 
-plan(24)
+plan(26)
 
 -- 1. Success connection.
 local tcpsock, err = socket.tcp()
@@ -40,6 +40,9 @@ tcpsock:close()
 local tcpsock = socket.tcp()
 tcpsock:settimeout(0.001)
 local ok, err = tcpsock:connect("yechengfu.com", 16787)
+is(ok, nil)
+is(err, socket.ERROR_TIMEOUT)
+local ok, err = tcpsock:connect("yechengfu.com", 80)
 is(ok, nil)
 is(err, socket.ERROR_TIMEOUT)
 local bytes, err = tcpsock:write("hello")
