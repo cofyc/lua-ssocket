@@ -139,10 +139,6 @@ TCP Socket Object
 
     `timeout = tcpsock:gettimeout()`
 
-* tcpsock:setblocking
-
-    `tcpsock:setblocking(block)`
-
 * tcpsock:getpeername
 
     `addr, err = tcpsock:getpeername()`

@@ -57,7 +57,6 @@ struct sockobj {
 #define OPT_TCP_NODELAY   "tcp_nodelay"
 #define OPT_TCP_KEEPALIVE "tcp_keepalive"
 
-/* Default BUFSIZE */
 #define SEND_BUFSIZE 8192
 #define RECV_BUFSIZE 8192
 
@@ -1320,29 +1319,6 @@ tcpsock_getopt(lua_State * L)
 }
 
 /**
- * sock:setblocking(block)
- *
- * 1/true   - blocking mode
- * 0/false  - non-blocking mode
- */
-static int
-tcpsock_setblocking(lua_State * L)
-{
-    struct sockobj *s = getsockobj(L);
-    int block = (int)luaL_checknumber(L, 2);
-
-    if (block && s->sock_timeout >= 0) {
-        s->sock_timeout = -1;
-        __setblocking(s->fd, block);
-    } else if (!block && s->sock_timeout < 0) {
-        s->sock_timeout = 0;
-        __setblocking(s->fd, block);
-    }
-
-    return 0;
-}
-
-/**
  * addr, err = tcpsock:getpeername
  *
  * Return the address of the remote endpoint.
@@ -1483,7 +1459,6 @@ static const luaL_Reg tcpsock_methods[] = {
     {"shutdown", tcpsock_shutdown},
     {"setopt", tcpsock_setopt},
     {"getopt", tcpsock_getopt},
-    {"setblocking", tcpsock_setblocking},
     {"getpeername", tcpsock_getpeername},
     {"getsockname", tcpsock_getsockname},
     {NULL, NULL},

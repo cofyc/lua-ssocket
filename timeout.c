@@ -2,9 +2,6 @@
 #include <time.h>
 #include <sys/time.h>
 
-#define MIN(x, y) ((x) < (y) ? x : y)
-#define MAX(x, y) ((x) > (y) ? x : y)
-
 /**
  * Returns current time in ms. (since 1970)
  */
