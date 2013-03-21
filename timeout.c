@@ -38,6 +38,8 @@ timeout_left(struct timeout *tm)
     if (tm->tm_timeout <= 0) {
         return -1;
     } else {
-        return tm->tm_deadline - timeout_gettime();
+        double left = tm->tm_deadline - timeout_gettime();
+        if (left < 0.0) left = 0.0;
+        return left;
     }
 }

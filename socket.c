@@ -92,10 +92,6 @@ __waitfd(struct sockobj *s, int event, struct timeout *tm)
 {
     int ret;
 
-    // Nothing to do if we're not in timeout mode.
-    if (s->sock_timeout <= 0.0)
-        return 0;
-
     // Nothing to do if socket is closed.
     if (s->fd < 0)
         return 0;
@@ -106,10 +102,11 @@ __waitfd(struct sockobj *s, int event, struct timeout *tm)
 
     do {
         // Handling this condition here simplifies the loops.
-        double timeout = timeout_left(tm);
-        if (timeout <= 0)
+        double left = timeout_left(tm);
+        if (left == 0.0)
             return 1;
-        ret = poll(&pollfd, 1, (int)(timeout * 1e3));
+        int timeout = (int)(left * 1e3);
+        ret = poll(&pollfd, 1, timeout >= 0 ? timeout : -1);
     } while (ret == -1 && CHECK_ERRNO(EINTR));
 
     if (ret < 0) {
@@ -363,8 +360,8 @@ __sockobj_createsocket(lua_State *L, struct sockobj *s, int type)
         return -1;
     }
 
-    // block or non-block
-    __setblocking(s->fd, s->sock_timeout < 0.0);
+    // 100% non-blocking
+    __setblocking(s->fd, 0);
 
     return 0;
 }
@@ -400,15 +397,16 @@ __sockobj_connect(lua_State *L, struct sockobj *s, struct sockaddr *addr, sockle
     char *errstr = NULL;
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
+    assert(s->fd > 0);
 
     errno = 0;
     ret = connect(s->fd, addr, len);
 
-    if (s->sock_timeout > 0.0 && CHECK_ERRNO(EINPROGRESS)) {
+    if (CHECK_ERRNO(EINPROGRESS)) {
         /* Connecting in progress with timeout, wait until we have the result of
          * the connection attempt or timeout.
          */
-        int timeout = __waitfd(s, EVENT_ANY, &tm);
+        int timeout = __waitfd(s, EVENT_WRITABLE, &tm);
         if (timeout == 1) {
             errstr = ERROR_TIMEOUT;
             goto err;
@@ -744,9 +742,6 @@ sockobj_settimeout(lua_State * L)
     struct sockobj *s = getsockobj(L);
     double timeout = (double)luaL_checknumber(L, 2);
     s->sock_timeout = timeout;
-    if (s->fd > 0) {
-        __setblocking(s->fd, timeout < 0.0);
-    }
     return 0;
 }
 
