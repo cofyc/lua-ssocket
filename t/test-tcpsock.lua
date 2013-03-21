@@ -8,10 +8,10 @@ package.cpath = package.cpath .. string.format(";%s/?.so;%s/../?.so", filedir, f
 require 'Test.More'
 local socket = require "socket"
 
-plan(17)
+plan(24)
 
 -- 1. Success connection.
-local tcpsock = socket.tcp()
+local tcpsock, err = socket.tcp()
 local ok, err = tcpsock:connect("yechengfu.com", 80)
 is(ok, true)
 is(err, nil)
@@ -48,3 +48,20 @@ is(err, socket.ERROR_CLOSED)
 local data, err, partial = tcpsock:read(1024)
 is(err, socket.ERROR_CLOSED)
 tcpsock:close()
+
+-- 5. setopt/getopt
+local tcpsock = socket.tcp()
+local ok, err = tcpsock:connect("yechengfu.com", 80)
+is(ok, true)
+local value = tcpsock:getopt(socket.OPT_TCP_KEEPALIVE)
+is(value, false)
+local value = tcpsock:getopt(socket.OPT_TCP_NODELAY)
+is(value, false)
+ok, err = tcpsock:setopt(socket.OPT_TCP_KEEPALIVE, true)
+is(ok, true)
+ok, err = tcpsock:setopt(socket.OPT_TCP_NODELAY, true)
+is(ok, true)
+local value = tcpsock:getopt(socket.OPT_TCP_KEEPALIVE)
+is(value, true)
+local value = tcpsock:getopt(socket.OPT_TCP_NODELAY)
+is(value, true)

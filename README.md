@@ -123,13 +123,13 @@ TCP Socket Object
 
     `fd = tcpsock:fileno()`
 
-* tcpsock:setoption
+* tcpsock:setopt
 
-    `ok, err = tcpsock:setoption(level, optname, value)`
+    `ok, err = tcpsock:setopt(opt, value)`
 
-* tcpsock:getoption
+* tcpsock:getopt
 
-    `value, err = tcpsock:getoption(level, optname)`
+    `value, err = tcpsock:getopt(level, opt)`
 
 * tcpsock:settimeout
 
@@ -154,6 +154,29 @@ TCP Socket Object
 UDP Socket Object
 -----------------
 
+* udpsock:connect
+
+    `ok, err = udpsock:connect(host, port)`
+    `ok, err = udpsock:connect("unix:/path/to/unix-domain.sock")`
+
+    Calling connect() on a datagram socket causes the kernel to record a particular
+    address as this socket’s peer.
+    We can change the peer of a connected datagram socket by issuing a further
+    connect() call. 
+
+* udpsock:bind (TODO)
+
+    `ok, err = udpsock:bind(host, port)`
+    `ok, err = udpsock:bind("unix:/path/to/unix-domain.sock")`
+
+* udpsock:recv (TODO)
+
+* udpsock:recvfrom (TODO)
+
+* udpsock:send (TODO)
+
+* udpsock:sendto (TODO)
+
 * udpsock:close
   
     `ok, err = udpsock:close()`
@@ -165,13 +188,21 @@ UDP Socket Object
 
     `fd = udpsock:fileno()`
 
+* udpsock:settimeout
+
+    `udpsock:settimeout(timeout)`
+
+* udpsock:gettimeout
+
+    `timeout = udpsock:gettimeout()`
+
 Contants
 --------
 
-TCP_* tcpsock:setoption and tcpsock:getoption parameters
+OPT_* setopt and getopt parameters
 
-  * socket.TCP_NODELAY
-  * socket.TCP_KEEPALIVE
+  * socket.OPT_TCP_NODELAY
+  * socket.OPT_TCP_KEEPALIVE
 
 SHUT_* tcpsock:shutdown() parameters
 

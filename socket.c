@@ -53,9 +53,13 @@ struct sockobj {
 #define ERROR_CLOSED    "Connection closed"
 #define ERROR_REFUSED   "Connection refused"
 
+/* Options */
+#define OPT_TCP_NODELAY   "tcp_nodelay"
+#define OPT_TCP_KEEPALIVE "tcp_keepalive"
+
 /* Default BUFSIZE */
-#define SEND_BUFSIZE 4096
-#define RECV_BUFSIZE 4096
+#define SEND_BUFSIZE 8192
+#define RECV_BUFSIZE 8192
 
 /**
  * Function to perform the setting of socket blocking mode.
@@ -1251,23 +1255,29 @@ tcpsock_shutdown(lua_State * L)
 }
 
 /**
- * ok, err = tcpsock:setoption(level, optname, value)
- *
- * Set a socket option. See the Unix manual for level and option.
+ * ok, err = tcpsock:setopt(opt, value)
  */
 static int
-tcpsock_setoption(lua_State * L)
+tcpsock_setopt(lua_State * L)
 {
     struct sockobj *s = getsockobj(L);
-    int level = luaL_checknumber(L, 2);
-    int optname = luaL_checknumber(L, 3);
-    int flag = luaL_checknumber(L, 4);
-    char *buf;
-    socklen_t buflen;
-    buf = (char *)&flag;
-    buflen = sizeof(flag);
+    const char *opt = luaL_checkstring(L, 2);
+    int flag = lua_toboolean(L, 3);
+    socklen_t flagsize;
+    flagsize = sizeof(flag);
     int err;
-    err = setsockopt(s->fd, level, optname, (void *)buf, buflen);
+    int level;
+    int optname;
+    if (!strcmp(opt, OPT_TCP_KEEPALIVE)) {
+        level = SOL_SOCKET;
+        optname = SO_KEEPALIVE;
+    } else if (!strcmp(opt, OPT_TCP_NODELAY)) {
+        level = IPPROTO_TCP;
+        optname = TCP_NODELAY;
+    } else {
+        return luaL_error(L, "unexpected option: %s", opt);
+    }
+    err = setsockopt(s->fd, level, optname, (void *)&flag, flagsize);
     if (err < 0) {
         lua_pushnil(L);
         lua_pushstring(L, strerror(errno));
@@ -1278,19 +1288,27 @@ tcpsock_setoption(lua_State * L)
 }
 
 /**
- * value, err = tcpsock:getopt(level, optname)
- *
- * Get a socket option. See the Unix manual for level and option.
+ * value, err = tcpsock:getopt(opt)
  */
 static int
-tcpsock_getoption(lua_State * L)
+tcpsock_getopt(lua_State * L)
 {
     struct sockobj *s = getsockobj(L);
-    int level = luaL_checknumber(L, 2);
-    int optname = luaL_checknumber(L, 3);
+    const char *opt = luaL_checkstring(L, 2);
     int flag;
     int err;
     socklen_t flagsize = sizeof(flag);
+    int level;
+    int optname;
+    if (!strcmp(opt, OPT_TCP_KEEPALIVE)) {
+        level = SOL_SOCKET;
+        optname = SO_KEEPALIVE;
+    } else if (!strcmp(opt, OPT_TCP_NODELAY)) {
+        level = IPPROTO_TCP;
+        optname = TCP_NODELAY;
+    } else {
+        return luaL_error(L, "unexpected option: %s", opt);
+    }
     err = getsockopt(s->fd, level, optname, (void *)&flag, &flagsize);
     if (err < 0) {
         lua_pushnil(L);
@@ -1423,6 +1441,19 @@ udpsock_connect(lua_State * L)
     return 1;
 }
 
+/**
+ * bytes, err = udpsock:send(data)
+ *
+ * Sends data on the current UDP or datagram unix domain socket object.
+ *
+ * In case of success, it returns 1. Otherwise, it returns nil and a string
+ * describing the error.
+ */
+static int
+udpsock_send(lua_State * L)
+{
+}
+
 static const luaL_Reg socketlib[] = {
     {"tcp", socket_tcp},
     {"udp", socket_udp},
@@ -1450,8 +1481,8 @@ static const luaL_Reg tcpsock_methods[] = {
     {"read", tcpsock_read},
     {"readuntil", tcpsock_readuntil},
     {"shutdown", tcpsock_shutdown},
-    {"setoption", tcpsock_setoption},
-    {"getoption", tcpsock_getoption},
+    {"setopt", tcpsock_setopt},
+    {"getopt", tcpsock_getopt},
     {"setblocking", tcpsock_setblocking},
     {"getpeername", tcpsock_getpeername},
     {"getsockname", tcpsock_getsockname},
@@ -1477,9 +1508,9 @@ luaopen_socket(lua_State * L)
     lua_pushstring(L, name);  \
     lua_setfield(L, -2, # name)
 
-    // TCP_* Tcp options
-    ADD_NUM_CONST(TCP_NODELAY);
-    ADD_NUM_CONST(TCP_KEEPALIVE);
+    // OPT_* options
+    ADD_STR_CONST(OPT_TCP_NODELAY);
+    ADD_STR_CONST(OPT_TCP_KEEPALIVE);
 
     // SHUT_* sock:shutdown() parameters
     ADD_NUM_CONST(SHUT_RD);
