@@ -129,23 +129,15 @@ TCP Socket Object
 
     `tcpsock:settimeout(timeout)`
 
-  Set the timeout value in seconds for subsequent socket operations.
-
-  A socket object can be in one of three modes: blocking, non-blocking, or
-  timeout. 
-   - In blocking mode, operations block untile complete or the system returns an
-   error.
-   - In non-blocking mode, operations fail (with an error that is unfortunately
-   system-dependent) if they cannot be completed immediately.
-   - In timeout mode, operations fail if they cannot be completed within the
-   timeout specified for the socket or if the system returns an error. (At the
-   os level, sockets in timeout mode are internally set in non-blocking mode.
-
-  Sockets are by default created in blocking mode.
+  Set the timeout in seconds for subsequent socket operations.
+  A negative timeout indicates that timeout is disabled, which is default.
 
 * tcpsock:gettimeout
 
     `timeout = tcpsock:gettimeout()`
+
+  Returns the timeout in seconds associated with socket.
+  A negative timeout indicates that timeout is disabled, which is default.
 
 * tcpsock:getpeername
 
