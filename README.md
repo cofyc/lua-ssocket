@@ -174,20 +174,48 @@ UDP Socket Object
     We can change the peer of a connected datagram socket by issuing a further
     connect() call. 
 
-* udpsock:bind (TODO)
+* udpsock:bind
 
     `ok, err = udpsock:bind(host, port)`
     `ok, err = udpsock:bind("unix:/path/to/unix-domain.sock")`
 
-* udpsock:recv (TODO)
+* udpsock:recv
+  
+    `data, err = udpsock:recv(buffersize)`
+ 
+    Receive up to buffersize bytes from UDP or datagram unix domain socket
+    object.
+   
+    In case of success, it returns the data received; in case of error, it
+    returns nil with a string describing the error.
 
-* udpsock:recvfrom (TODO)
+* udpsock:recvfrom
+
+    `data, addr, err = udpsock:recvfrom(buffersize)`
+
+    Works exactly as the udpsock:recv method, except it returns the addr as extra
+    return values (and is therefore slightly less efficient) in
+    case of success.
 
 * udpsock:send
 
-    `bytes, err = tcpsock:write(data)`
+    `ok, err = tcpsock:write(data)`
+
+    Writes data on the current UDP or datagram unix domain socket object.
+   
+    In case of success, it returns true. Otherwise, it returns nil and a string
+    describing the error.
 
 * udpsock:sendto (TODO)
+
+    `ok, err = udpsock:send(data, host, port)`
+    `ok, err = udpsock:send(data, "unix:/path/to/unix-domain.sock")`
+   
+    Writes data on the current UDP or datagram unix domain socket object to
+    specified address.
+   
+    In case of success, it returns true. Otherwise, it returns nil and a string
+    describing the error.
 
 * udpsock:close
   

@@ -218,41 +218,43 @@ __sockobj_setipaddr(lua_State *L, const char *name, struct sockaddr *addr_ret, s
  * resolution and/or the host configuration. For deterministic behavior use a
  * numeric address in host portion.
  *
- * This method assumed that address arguments start at argument index 2.
+ * This method assumed that address arguments start after offset index.
  *
- * Returns 0 on success, 1 on failure.
+ * Returns 0 on success, -1 on failure.
  */
 static int
 __sockobj_getaddrfromarg(lua_State * L, struct sockobj *s, struct sockaddr *addr_ret,
-                     socklen_t * len_ret)
+                     socklen_t * len_ret, int offset)
 {
     int n;
     n = lua_gettop(L);
-    if (n != 2 && n != 3) {
-        return luaL_error(L, "tcpsocket:connect expecting 2 or 3 arguments"
-        " (including the object itself), but seen %d", n);
+    if (n != 1 + offset && n != 2 + offset) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "expecting %d or %d arguments"
+        " (including the object itself), but seen %d", offset + 1, offset + 2, n);
+        return -1;
     }
 
-    if (n == 3) {
+    if (n == 2 + offset) {
         s->sock_family = AF_INET;
-    } else if (n == 2) {
+    } else if (n == 1 + offset) {
         s->sock_family = AF_UNIX;
     }
     if (s->sock_family == AF_INET) {
         struct sockaddr_in *addr = (struct sockaddr_in *)addr_ret;
         const char *host;
         int port;
-        host = luaL_checkstring(L, 2);
-        port = luaL_checknumber(L, 3);
+        host = luaL_checkstring(L, 1 + offset);
+        port = luaL_checknumber(L, 2 + offset);
         if (__sockobj_setipaddr(L, host, (struct sockaddr *)addr, sizeof(*addr), AF_INET) != 0) {
-            return 2;
+            return -1;
         }
         addr->sin_family = AF_INET;
         addr->sin_port = htons(port);
         *len_ret = sizeof(*addr);
     } else if (s->sock_family == AF_UNIX) {
         struct sockaddr_un *addr = (struct sockaddr_un *)addr_ret;
-        const char *path = luaL_checkstring(L, 2);
+        const char *path = luaL_checkstring(L, 1 + offset);
         addr->sun_family = AF_UNIX;
         strncpy(addr->sun_path, path, sizeof(addr->sun_path) - 1);
         *len_ret = sizeof(*addr);
@@ -277,9 +279,6 @@ __sockobj_makeaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
                socklen_t addrlen)
 {
     lua_newtable(L);
-    if (addrlen == 0) {
-        return 1;
-    }
 
     switch (addr->sa_family) {
     case AF_INET:
@@ -292,7 +291,7 @@ __sockobj_makeaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
                 err = errno;
                 lua_pushnil(L);
                 lua_pushstring(L, gai_strerror(errno));
-                return 2;
+                return -1;
             }
             lua_pushnumber(L, 1);
             lua_pushstring(L, buf);
@@ -300,7 +299,7 @@ __sockobj_makeaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
             lua_pushnumber(L, 2);
             lua_pushnumber(L, ntohs(a->sin_port));
             lua_settable(L, -3);
-            return 1;
+            return 0;
         }
     case AF_UNIX:
         {
@@ -315,7 +314,7 @@ __sockobj_makeaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
                 /* regular NULL-terminated string */
                 lua_pushstring(L, a->sun_path);
             }
-            return 1;
+            return 0;
         }
     default:
         /* If we don't know the address family, return it as an {int, bytes}
@@ -326,12 +325,12 @@ __sockobj_makeaddr(lua_State * L, struct sockobj *s, struct sockaddr *addr,
         lua_pushnumber(L, 2);
         lua_pushstring(L, addr->sa_data);
         lua_settable(L, -3);
-        return 1;
+        return 0;
     }
 }
 
 /**
- * Create socket object.
+ * Generic socket object creation.
  */
 struct sockobj *
 __sockobj_create(lua_State *L, const char *tname)
@@ -359,10 +358,9 @@ __sockobj_createsocket(lua_State *L, struct sockobj *s, int type)
 
     if ((fd = socket(s->sock_family, type, 0)) == -1) {
         lua_pushnil(L);
-        lua_pushfstring(L, "creating socket: %s", strerror(errno));
+        lua_pushfstring(L, "failed to create socket: %s", strerror(errno));
         return -1;
     }
-
     s->fd = fd;
 
     // 100% non-blocking
@@ -446,7 +444,97 @@ err:
 }
 
 static int
-__sockobj_send(lua_State *L, struct sockobj *s, const char *buf, size_t len) {
+__sockobj_send(lua_State *L, struct sockobj *s, const char *buf, size_t len, size_t *sent, struct timeout *tm) {
+    char *errstr;
+    if (s->fd == -1) {
+        errstr = ERROR_CLOSED;
+        goto err;
+    }
+
+    while (1) {
+        int timeout = __waitfd(s, EVENT_WRITABLE, tm);
+        if (timeout == -1) {
+            errstr = strerror(errno);
+            goto err;
+        } else if (timeout == 1) {
+            errstr = ERROR_TIMEOUT;
+            goto err;
+        } else {
+            int n = send(s->fd, buf, len, 0);
+            if (n < 0) {
+                switch (errno) {
+                case EINTR:
+                case EAGAIN:
+                    continue;
+                case EPIPE:
+                    // EPIPE means the connection was closed.
+                    errstr = ERROR_CLOSED;
+                    goto err;
+                default:
+                    errstr = strerror(errno);
+                    goto err;
+                }
+            } else {
+                *sent = n;
+                return 0;
+            }
+        }
+    }
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return -1;
+}
+
+static int
+__sockobj_sendto(lua_State *L, struct sockobj *s, const char *buf, size_t len, size_t *sent, struct sockaddr *addr, socklen_t addrlen, struct timeout *tm) {
+    char *errstr;
+    if (s->fd == -1) {
+        errstr = ERROR_CLOSED;
+        goto err;
+    }
+
+    while (1) {
+        int timeout = __waitfd(s, EVENT_WRITABLE, tm);
+        if (timeout == -1) {
+            errstr = strerror(errno);
+            goto err;
+        } else if (timeout == 1) {
+            errstr = ERROR_TIMEOUT;
+            goto err;
+        } else {
+            int n = sendto(s->fd, buf, len, 0, addr, addrlen);
+            if (n < 0) {
+                switch (errno) {
+                case EINTR:
+                case EAGAIN:
+                    continue;
+                case EPIPE:
+                    // EPIPE means the connection was closed.
+                    errstr = ERROR_CLOSED;
+                    goto err;
+                default:
+                    errstr = strerror(errno);
+                    goto err;
+                }
+            } else {
+                *sent = n;
+                return 0;
+            }
+        }
+    }
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return -1;
+}
+
+static int
+__sockobj_write(lua_State *L, struct sockobj *s, const char *buf, size_t len) {
     char *errstr;
     size_t total_sent = 0;
     if (s->fd == -1) {
@@ -457,7 +545,6 @@ __sockobj_send(lua_State *L, struct sockobj *s, const char *buf, size_t len) {
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
     while (1) {
-        errno = 0;
         int timeout = __waitfd(s, EVENT_WRITABLE, &tm);
         if (timeout == -1) {
             errstr = strerror(errno);
@@ -500,9 +587,6 @@ err:
     return -1;
 }
 
-/**
- * Receive with timeout.
- */
 static int
 __sockobj_recv(lua_State *L, struct sockobj *s, char *buf, size_t buffersize, size_t *received, struct timeout *tm)
 {
@@ -514,8 +598,6 @@ __sockobj_recv(lua_State *L, struct sockobj *s, char *buf, size_t buffersize, si
     }
 
     while (1) {
-        errno = 0;
-
         int timeout = __waitfd(s, EVENT_READABLE, tm);
         if (timeout == -1) {
             errstr = strerror(errno);
@@ -552,10 +634,54 @@ err:
     return -1;
 }
 
+static int
+__sockobj_recvfrom(lua_State *L, struct sockobj *s, char *buf, size_t buffersize, size_t *received, struct sockaddr *addr, socklen_t *addrlen, struct timeout *tm)
+{
+    char *errstr = NULL;
+
+    if (s->fd == -1) {
+        errstr = ERROR_CLOSED;
+        goto err;
+    }
+
+    while (1) {
+        int timeout = __waitfd(s, EVENT_READABLE, tm);
+        if (timeout == -1) {
+            errstr = strerror(errno);
+            goto err;
+        } else if (timeout == 1) {
+            errstr = ERROR_TIMEOUT;
+            goto err;
+        } else {
+            int bytes_read = recvfrom(s->fd, buf, buffersize, 0, addr, addrlen);
+            if (bytes_read > 0) {
+                *received = bytes_read;
+                return 0;
+            } else if (bytes_read == 0) {
+                errstr = ERROR_CLOSED;
+                goto err;
+            } else {
+                switch (errno) {
+                case EINTR:
+                case EAGAIN:
+                    // do nothing, continue
+                    continue;
+                default:
+                    errstr = strerror(errno);
+                    goto err;
+                }
+            }
+        }
+    }
+
+err:
+    assert(errstr);
+    lua_pushnil(L);
+    lua_pushstring(L, errstr);
+    return -1;
+}
 /**
  * tcpsock, err = socket.tcp()
- *
- * Creates and returns a TCP or stream-oriented unix domain socket object.
  */
 static int
 socket_tcp(lua_State * L)
@@ -569,8 +695,6 @@ socket_tcp(lua_State * L)
 
 /**
  * udpsock, err = socket.udp()
- *
- * Creates and returns a UDP or datagram-oriented unix domain socket object.
  */
 static int
 socket_udp(lua_State * L)
@@ -885,13 +1009,12 @@ tcpsock_connect(lua_State * L)
     sockaddr_t addr;
     socklen_t len;
 
-    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len)) {
+    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len, 1)) {
         return 2;
     }
-
-    if (__sockobj_createsocket(L, s, SOCK_STREAM) == -1)
+    if (__sockobj_createsocket(L, s, SOCK_STREAM) == -1) {
         return 2;
-
+    }
     if (__sockobj_connect(L, s, SAS2SA(&addr), len) == -1)
         return 2;
 
@@ -911,12 +1034,12 @@ tcpsock_bind(lua_State * L)
     socklen_t len;
     char *errstr = NULL;
 
-    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len)) {
+    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len, 1)) {
         return 2;
     }
-
-    if (__sockobj_createsocket(L, s, SOCK_STREAM) == -1)
+    if (__sockobj_createsocket(L, s, SOCK_STREAM) == -1) {
         return 2;
+    }
 
     if (bind(s->fd, SAS2SA(&addr), len) < 0) {
         errstr = strerror(errno);
@@ -1040,7 +1163,7 @@ tcpsock_write(lua_State * L)
     size_t len;
     const char *buf = luaL_checklstring(L, 2, &len);
 
-    if (__sockobj_send(L, s, buf, len) == -1)
+    if (__sockobj_write(L, s, buf, len) == -1)
         return 2;
 
     return 1;
@@ -1076,7 +1199,6 @@ again:
     }
 
     while (1) {
-        errno = 0;
         int timeout = __waitfd(s, EVENT_READABLE, &tm);
         if (timeout == -1) {
             errstr = strerror(errno);
@@ -1182,7 +1304,6 @@ again:
     } while (0);
 
     while (1) {
-        errno = 0;
         int timeout = __waitfd(s, EVENT_READABLE, &tm);
         if (timeout == -1) {
             errstr = strerror(errno);
@@ -1381,7 +1502,9 @@ tcpsock_getpeername(lua_State * L)
         lua_pushstring(L, strerror(err));
         return 2;
     }
-    return __sockobj_makeaddr(L, s, SAS2SA(&addr), addrlen);
+    if (__sockobj_makeaddr(L, s, SAS2SA(&addr), addrlen) == -1)
+        return 2;
+    return 1;
 }
 
 /**
@@ -1409,7 +1532,9 @@ tcpsock_getsockname(lua_State * L)
         lua_pushstring(L, strerror(err));
         return 2;
     }
-    return __sockobj_makeaddr(L, s, SAS2SA(&addr), addrlen);
+    if (__sockobj_makeaddr(L, s, SAS2SA(&addr), addrlen) == -1)
+        return 2;
+    return 1;
 }
 
 /**
@@ -1429,13 +1554,12 @@ udpsock_connect(lua_State * L)
     sockaddr_t addr;
     socklen_t len;
 
-    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len)) {
+    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len, 1)) {
         return 2;
     }
-
-    if (__sockobj_createsocket(L, s, SOCK_DGRAM) == -1)
+    if (__sockobj_createsocket(L, s, SOCK_DGRAM) == -1) {
         return 2;
-
+    }
     if (__sockobj_connect(L, s, SAS2SA(&addr), len) == -1)
         return 2;
 
@@ -1455,13 +1579,12 @@ udpsock_bind(lua_State * L)
     socklen_t len;
     char *errstr = NULL;
 
-    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len)) {
+    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len, 1)) {
         return 2;
     }
-
-    if (__sockobj_createsocket(L, s, SOCK_DGRAM) == -1)
+    if (__sockobj_createsocket(L, s, SOCK_DGRAM) == -1) {
         return 2;
-
+    }
     if (bind(s->fd, SAS2SA(&addr), len) < 0) {
         errstr = strerror(errno);
         goto err;
@@ -1478,11 +1601,11 @@ err:
 }
 
 /**
- * bytes, err = udpsock:send(data)
+ * ok, err = udpsock:send(data)
  *
  * Writes data on the current UDP or datagram unix domain socket object.
  *
- * In case of success, it returns 1. Otherwise, it returns nil and a string
+ * In case of success, it returns true. Otherwise, it returns nil and a string
  * describing the error.
  */
 static int
@@ -1492,9 +1615,48 @@ udpsock_send(lua_State * L)
     size_t len;
     const char *buf = luaL_checklstring(L, 2, &len);
 
-    if (__sockobj_send(L, s, buf, len) == -1)
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+    size_t sent = 0;
+    if (__sockobj_send(L, s, buf, len, &sent, &tm) == -1)
         return 2;
 
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+/**
+ * ok, err = udpsock:sendto(data, host, port)
+ * ok, err = udpsock:sendto(data, "unix:/path/to/unix-domain.sock")
+ *
+ * Writes data on the current UDP or datagram unix domain socket object to
+ * specified address.
+ *
+ * In case of success, it returns true. Otherwise, it returns nil and a string
+ * describing the error.
+ */
+static int
+udpsock_sendto(lua_State * L)
+{
+    struct sockobj *s = getsockobj(L);
+    size_t len;
+    const char *buf = luaL_checklstring(L, 2, &len);
+    sockaddr_t addr;
+    socklen_t addrlen;
+
+    if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &addrlen, 2)) {
+        return 2;
+    }
+    if (__sockobj_createsocket(L, s, SOCK_DGRAM) == -1) {
+        return 2;
+    }
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+    size_t sent = 0;
+    if (__sockobj_sendto(L, s, buf, len, &sent, SAS2SA(&addr), addrlen, &tm) == -1)
+        return 2;
+
+    lua_pushboolean(L, 1);
     return 1;
 }
 
@@ -1524,6 +1686,45 @@ udpsock_recv(lua_State * L)
 
     lua_pushlstring(L, buf->last, received);
     return 1;
+}
+
+/**
+ * data, addr, err = udpsock:recvfrom(buffersize)
+ *
+ * Works exactly as the udpsock:recv method, except it returns the addr as extra
+ * return values (and is therefore slightly less efficient) in
+ * case of success.
+ */
+static int
+udpsock_recvfrom(lua_State * L)
+{
+    struct sockobj *s = getsockobj(L);
+    size_t buffersize = (int)luaL_checknumber(L, 2);
+    struct buffer *buf = NULL;
+    buf = buffer_create(buffersize);
+    size_t received = 0;
+    sockaddr_t addr;
+    socklen_t addrlen;
+    if (!__getsockaddrlen(s, &addrlen)) {
+        lua_pushnil(L);
+        lua_pushnil(L);
+        lua_pushstring(L, "unknown address family");
+        return 2;
+    }
+
+    struct timeout tm;
+    timeout_init(&tm, s->sock_timeout);
+
+    if (__sockobj_recvfrom(L, s, buf->last, buffersize, &received, SAS2SA(&addr), &addrlen, &tm) == -1)
+        return 2;
+
+    lua_pushlstring(L, buf->last, received);
+    if (__sockobj_makeaddr(L, s, SAS2SA(&addr), addrlen) == -1) {
+        lua_pop(L, 1);
+        return 2;
+    }
+
+    return 2;
 }
 
 static const luaL_Reg socketlib[] = {
@@ -1564,7 +1765,9 @@ static const luaL_Reg udpsock_methods[] = {
     {"connect", udpsock_connect},
     {"bind", udpsock_bind},
     {"send", udpsock_send},
+    {"sendto", udpsock_sendto},
     {"recv", udpsock_recv},
+    {"recvfrom", udpsock_recvfrom},
     {NULL, NULL},
 };
 
