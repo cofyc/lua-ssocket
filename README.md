@@ -1,8 +1,6 @@
 Lua 5.2 socket module
 =====================
 
-*I wrote this only for learning purpose. It's not production ready, use http://w3.impa.br/~diego/software/luasocket/ instead.*
-
 Examples
 ========
 
@@ -235,19 +233,23 @@ UDP Socket Object
 Contants
 --------
 
-OPT_* setopt and getopt parameters
+Module infos:
+    
+  * socket._VERSION
+
+OPT_* are setopt and getopt parameters:
 
   * socket.OPT_TCP_NODELAY
   * socket.OPT_TCP_KEEPALIVE
   * socket.OPT_TCP_REUSEADDR
 
-SHUT_* tcpsock:shutdown() parameters
+SHUT_* are tcpsock:shutdown() parameters:
 
   * socket.SHUT_RD
   * socket.SHUT_WR
   * socket.SHUT_RDWR
 
-ERROR_* some error strings, which can be used to detect errors
+ERROR_* are predefined error strings, which can be used to detect errors:
 
   * socket.ERROR_TIMEOUT
   * scoekt.ERROR_CLOSED
