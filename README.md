@@ -38,10 +38,6 @@ Socket Module
 
     `udpsock, err = socket.udp()`
 
-* socket.getaddrinfo
-
-    `addrinfos, err = socket.getaddrinfo(host, port[, family=0[, socktype=0[, protocol=0[, flags=0]]]])`
-
 * socket.select
 
     `readfds, writefds, err = socket.select(readfds, writefds[, timeout=-1])`

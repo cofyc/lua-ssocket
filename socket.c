@@ -349,12 +349,13 @@ __sockobj_create(lua_State *L, const char *tname)
 }
 
 /**
- * Generic socket creation.
+ * Generic socket fd creation.
  */
 static int
 __sockobj_createsocket(lua_State *L, struct sockobj *s, int type)
 {
     int fd;
+    assert(s->fd == -1);
 
     if ((fd = socket(s->sock_family, type, 0)) == -1) {
         lua_pushnil(L);
@@ -804,104 +805,6 @@ socket_select(lua_State * L)
     }
 }
 
-/**
- * addrinfos, err = socket.getaddrinfo(host, port[, family=0[, socktype=0[, protocol=0[, flags=0]]]])
- *
- * Translate the host/port argument into a sequence of table that contain all
- * the necessary arguments for creating a socket to connect to that service,
- * each table has following 5 fileds:
- *  family
- *  socktype
- *  protocol
- *  canonname
- *  addr
- *
- * `host` is a domain name, a string representation of an IPv4/v6 address or nil
- * `port` is a string service name such as 'http', a numeric port number or nil
- * The `family`, `socktype`, `protocol` arguments can be optionally specified in
- * order to narrow the list of addresses returned. Passing zero (default) for
- * each of these arguments selects full range of results.
- * The `flags` can be one or serveral of the AI_* constants, and will influence
- * how results are computed and returned. For example, AI_NUMERICHOST will
- * disable domain name resolution and will raise an error if host is a domain
- * name.
- *
- */
-static int
-socket_getaddrinfo(lua_State * L)
-{
-    const char *hostname = luaL_checkstring(L, 1);
-    int type = lua_type(L, 2);
-    char pbuf[30];
-    char *pptr;
-    switch (type) {
-    case LUA_TNUMBER:
-        snprintf(pbuf, sizeof(pbuf), "%d", (int)luaL_checknumber(L, 2));
-        pptr = pbuf;
-        break;
-    case LUA_TSTRING:
-        pptr = (char *)luaL_checkstring(L, 2);
-        break;
-    case LUA_TNIL:
-        pptr = (char *)NULL;
-        break;
-    default:
-        lua_pushnil(L);
-        lua_pushstring(L, "port argument expect string/number/nil");
-        return 2;
-        break;
-    }
-    int family = luaL_optnumber(L, 3, AF_UNSPEC);
-    int socktype = luaL_optnumber(L, 4, 0);
-    int protocol = luaL_optnumber(L, 5, 0);
-    int flags = luaL_optnumber(L, 6, 0);
-
-    struct addrinfo *iterator = NULL, *resolved = NULL;
-    struct addrinfo hints;
-    int ret = 0;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = family;
-    hints.ai_socktype = socktype;
-    hints.ai_protocol = protocol;
-    hints.ai_flags = flags;
-    ret = getaddrinfo(hostname, pptr, &hints, &resolved);
-    if (ret != 0) {
-        lua_pushnil(L);
-        lua_pushstring(L, gai_strerror(ret));
-        return 2;
-    }
-    lua_newtable(L);
-    int i = 1;
-    for (iterator = resolved; iterator; iterator = iterator->ai_next) {
-        char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-        getnameinfo(iterator->ai_addr, iterator->ai_addrlen, hbuf, sizeof(hbuf),
-                    sbuf, 0, flags);
-        lua_pushnumber(L, i);
-        lua_newtable(L);
-
-        lua_pushliteral(L, "family");
-        lua_pushnumber(L, iterator->ai_family);
-        lua_settable(L, -3);
-        lua_pushliteral(L, "socktype");
-        lua_pushnumber(L, iterator->ai_socktype);
-        lua_settable(L, -3);
-        lua_pushliteral(L, "protocol");
-        lua_pushnumber(L, iterator->ai_protocol);
-        lua_settable(L, -3);
-        lua_pushliteral(L, "canonname");
-        lua_pushstring(L, iterator->ai_canonname ? iterator->ai_canonname : "");
-        lua_settable(L, -3);
-        lua_pushliteral(L, "addr");
-        lua_pushstring(L, hbuf);
-        lua_settable(L, -3);
-
-        lua_settable(L, -3);
-        i++;
-    }
-    freeaddrinfo(resolved);
-    return 1;
-}
-
 /*** sock_* methods are common to tcpsocket or udpsocket ***/
 
 /**
@@ -1009,6 +912,9 @@ tcpsock_connect(lua_State * L)
     sockaddr_t addr;
     socklen_t len;
 
+    if (s->fd > 0) {
+        return luaL_error(L, "already connected");
+    }
     if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len, 1)) {
         return 2;
     }
@@ -1034,6 +940,9 @@ tcpsock_bind(lua_State * L)
     socklen_t len;
     char *errstr = NULL;
 
+    if (s->fd > 0) {
+        return luaL_error(L, "already bound");
+    }
     if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len, 1)) {
         return 2;
     }
@@ -1554,6 +1463,9 @@ udpsock_connect(lua_State * L)
     sockaddr_t addr;
     socklen_t len;
 
+    if (s->fd > 0) {
+        return luaL_error(L, "already connected");
+    }
     if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len, 1)) {
         return 2;
     }
@@ -1579,6 +1491,9 @@ udpsock_bind(lua_State * L)
     socklen_t len;
     char *errstr = NULL;
 
+    if (s->fd > 0) {
+        return luaL_error(L, "already bound");
+    }
     if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &len, 1)) {
         return 2;
     }
@@ -1647,8 +1562,11 @@ udpsock_sendto(lua_State * L)
     if (__sockobj_getaddrfromarg(L, s, SAS2SA(&addr), &addrlen, 2)) {
         return 2;
     }
-    if (__sockobj_createsocket(L, s, SOCK_DGRAM) == -1) {
-        return 2;
+    if (s->fd == -1) {
+        // create socket if not presented
+        if (__sockobj_createsocket(L, s, SOCK_DGRAM) == -1) {
+            return 2;
+        }
     }
     struct timeout tm;
     timeout_init(&tm, s->sock_timeout);
@@ -1731,7 +1649,6 @@ static const luaL_Reg socketlib[] = {
     {"tcp", socket_tcp},
     {"udp", socket_udp},
     {"select", socket_select},
-    {"getaddrinfo", socket_getaddrinfo},
     {NULL, NULL},
 };
 
