@@ -1,9 +1,9 @@
 #!/usr/bin/env lua
-socket = require "socket"
+socket = require "simple_socket"
 tcpsock = socket.tcp()
 ok, err = tcpsock:connect("www.google.com", 80)
 if err then
-    print(err)
+  print(err)
 end
 tcpsock:write("GET / HTTP/1.1\r\n")
 tcpsock:write("\r\n")

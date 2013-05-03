@@ -1,10 +1,12 @@
-Lua 5.2 socket module
+Lua simple socket module
 =====================
+
+A simple socket module for lua. It supports: Lua 5.2.
 
 Examples
 ========
 
-    socket = require "socket"
+    socket = require "simple_socket"
     tcpsock = socket.tcp()
     ok, err = tcpsock:connect("www.google.com", 80)
     if err then

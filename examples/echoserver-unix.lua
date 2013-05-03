@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
-local socket = require "socket"
+local socket = require "simple_socket"
 
 SOCK_PATH = '/tmp/test.sock'
 tcpsock = socket.tcp()
@@ -26,7 +26,7 @@ while true do
   if err then
     print(err)
     os.exit()
-  else 
+  else
     reader, err = conn:readuntil("\n")
     if err then
       print(err)

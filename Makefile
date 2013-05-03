@@ -5,6 +5,7 @@ INSTALL_EXEC = $(INSTALL) -m 0755
 INSTALL_DATA = $(INSTALL) -m 0644
 LUA_VERSION = 5.2
 CFLAGS = -Wall -O2 -g -std=c99 -pedantic
+MODULE_NAME = simple_socket
 
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
@@ -14,7 +15,7 @@ else
 	SHARELIB_FLAGS = -fPIC --shared
 endif
 
-all: socket.so
+all: $(MODULE_NAME).so
 
 LIB_H += $(wildcard *.h)
 
@@ -24,18 +25,18 @@ LIB_OBJS += buffer.o
 
 $(LIB_OBJS): $(LIB_H)
 
-socket.so: $(LIB_OBJS)
-	$(CC) $(CFLAGS) $(SHARELIB_FLAGS) -o socket.so $^
+$(MODULE_NAME).so: $(LIB_OBJS)
+	$(CC) $(CFLAGS) $(SHARELIB_FLAGS) -o $@ $^
 
 install: all
-	$(INSTALL_DATA) socket.so $(PREFIX)/lib/lua/$(LUA_VERSION)
+	$(INSTALL_DATA) $(MODULE_NAME).so $(PREFIX)/lib/lua/$(LUA_VERSION)/$(MODULE_NAME).so
 
 uninstall:
-	$(RM) $(PREFIX)/lib/lua/$(LUA_VERSION)/socket.so
+	$(RM) $(PREFIX)/lib/lua/$(LUA_VERSION)/$(MODULE_NAME).so
 
 clean:
-	$(RM) socket.so
-	$(RM) -r socket.so.dSYM
+	$(RM) $(MODULE_NAME).so
+	$(RM) -r $(MODULE_NAME).so.dSYM
 	$(RM) $(LIB_OBJS)
 
 test: all

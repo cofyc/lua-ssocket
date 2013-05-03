@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
-local socket = require "socket"
+local socket = require "simple_socket"
 
 HOST = '127.0.0.1'
 PORT = 12345
@@ -23,7 +23,7 @@ while true do
   if err then
     print(err)
     os.exit()
-  else 
+  else
     reader, err = conn:readuntil("\n")
     if err then
       print(err)
