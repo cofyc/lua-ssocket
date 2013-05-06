@@ -241,7 +241,7 @@ Module infos:
     
   * socket._VERSION
 
-OPT_* are setopt and getopt parameters:
+OPT_* are tcpsock:setopt and tcpsock:getopt parameters:
 
   * socket.OPT_TCP_NODELAY
   * socket.OPT_TCP_KEEPALIVE
