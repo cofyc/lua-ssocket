@@ -24,6 +24,16 @@ Examples
 
 More examples, see *examples/* folder.
 
+Installation
+============
+
+    $ git clone git://github.com/Cofyc/lua-simple-socket.git
+    $ make install
+
+By [luarocks](http://luarocks.org/)
+
+    $ luarocks make
+    
 Docs
 ====
 
