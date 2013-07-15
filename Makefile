@@ -26,7 +26,7 @@ OBJECTS += socket.o
 OBJECTS += timeout.o
 OBJECTS += buffer.o
 
-$(OBJECTS): $(LIB_H)
+$(OBJECTS): $(LIB_H) lua/lua
 
 $(OBJECTS): %.o: %.c
 	$(CC) -o $*.o -c $(ALL_CFLAGS) $<
@@ -40,15 +40,21 @@ install: all
 uninstall:
 	$(RM) $(PREFIX)/lib/lua/$(LUA_VERSION)/$(MODULE_NAME).so
 
+test: all
+	@prove --exec=./lua/lua --timer t/test-*.lua
+
+lua/lua:
+	test -d lua || git clone git://github.com/LuaDist/lua.git lua
+	cd lua && git checkout 5.2.2
+	cd lua && cmake . && make
+
+tags:
+	find . \( -name .git -type d -prune \) -o \( -name '*.[hc]' -type f -print \) | xargs ctags -a
+
 clean:
 	$(RM) $(MODULE_NAME).so
 	$(RM) -r $(MODULE_NAME).so.dSYM
 	$(RM) $(OBJECTS)
-
-test: all
-	@prove --exec=lua --timer t/test-*.lua
-
-tags:
-	find . \( -name .git -type d -prune \) -o \( -name '*.[hc]' -type f -print \) | xargs ctags -a
+	$(RM) -rf ./lua
 
 .PHONY: all install uninstall clean test tags
