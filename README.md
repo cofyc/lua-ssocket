@@ -1,9 +1,9 @@
 Lua simple socket module
 =====================
 
-[![Build Status](https://travis-ci.org/Cofyc/lua-simple_socket.png?branch=master)](https://travis-ci.org/Cofyc/lua-simple_socket)
-
 A simple socket module for lua. It supports: Lua 5.2.
+
+[![Build Status](https://travis-ci.org/Cofyc/lua-simple_socket.png?branch=master)](https://travis-ci.org/Cofyc/lua-simple_socket)
 
 Examples
 ========

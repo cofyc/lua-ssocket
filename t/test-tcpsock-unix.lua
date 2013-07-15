@@ -6,6 +6,7 @@ package.cpath = string.format(";%s/?.so;%s/../?.so;", filedir, filedir) .. packa
 
 require 'Test.More'
 local socket = require "simple_socket"
+local lua_bin = os.getenv("LUA") or "lua"
 
 plan(6)
 
@@ -27,7 +28,7 @@ is(err, nil)
 tcpsock:close()
 
 -- 3. connect
-os.execute(string.format("%s %s/start_unix_server.lua &>/dev/null &", os.getenv("LUA"), filedir))
+os.execute(string.format("%s %s/start_unix_server.lua &>/dev/null &", lua_bin, filedir))
 os.execute("sleep 1") -- make sure service is on
 local tcpsock = socket.tcp()
 local ok, err = tcpsock:connect(TEST_UNIX_SOCK)
