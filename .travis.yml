@@ -6,5 +6,5 @@ before_script:
   - git clone git://github.com/LuaDist/lua.git lua
   - cd lua
   - git checkout 5.2.2
-  - cmake . && make install
-script: make test
+  - cmake . && make
+script: make test CFLAGS="-I./lua/ -I./lua/src"
