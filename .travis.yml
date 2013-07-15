@@ -7,4 +7,5 @@ before_script:
   - cd lua
   - git checkout 5.2.2
   - cmake . && make
+  - cd ../
 script: make test CFLAGS="-I./lua/ -I./lua/src"
