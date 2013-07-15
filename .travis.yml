@@ -8,4 +8,7 @@ before_script:
   - git checkout 5.2.2
   - cmake . && make
   - cd ../
-script: make test CFLAGS="-I./lua/ -I./lua/src"
+install: make CFLAGS="-I./lua/ -I./lua/src"
+script: prove --exec=./lua/lua --timer t/test-*.lua
+
+
