@@ -1,10 +1,13 @@
+BASIC_CFLAGS = -Wall -O2 -g -std=c99 -pedantic
+
+ALL_CFLAGS = $(BASIC_CFLAGS) $(CFLAGS)
+
 PREFIX = /usr/local
 RM = rm -f
 INSTALL = install -p
 INSTALL_EXEC = $(INSTALL) -m 0755
 INSTALL_DATA = $(INSTALL) -m 0644
 LUA_VERSION = 5.2
-CFLAGS = -Wall -O2 -g -std=c99 -pedantic
 MODULE_NAME = simple_socket
 
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
@@ -19,14 +22,17 @@ all: $(MODULE_NAME).so
 
 LIB_H += $(wildcard *.h)
 
-LIB_OBJS += socket.o
-LIB_OBJS += timeout.o
-LIB_OBJS += buffer.o
+OBJECTS += socket.o
+OBJECTS += timeout.o
+OBJECTS += buffer.o
 
-$(LIB_OBJS): $(LIB_H)
+$(OBJECTS): $(LIB_H)
 
-$(MODULE_NAME).so: $(LIB_OBJS)
-	$(CC) $(CFLAGS) $(SHARELIB_FLAGS) -o $@ $^
+$(OBJECTS): %.o: %.c
+	$(CC) -o $*.o -c $(ALL_CFLAGS) $<
+
+$(MODULE_NAME).so: $(OBJECTS)
+	$(CC) $(ALL_CFLAGS) $(SHARELIB_FLAGS) -o $@ $^
 
 install: all
 	$(INSTALL_DATA) $(MODULE_NAME).so $(PREFIX)/lib/lua/$(LUA_VERSION)/$(MODULE_NAME).so
@@ -37,7 +43,7 @@ uninstall:
 clean:
 	$(RM) $(MODULE_NAME).so
 	$(RM) -r $(MODULE_NAME).so.dSYM
-	$(RM) $(LIB_OBJS)
+	$(RM) $(OBJECTS)
 
 test: all
 	@prove --exec=lua --timer t/test-*.lua
