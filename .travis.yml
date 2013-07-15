@@ -4,7 +4,6 @@ compiler:
   - clang
 before_script:
   - git clone git://github.com/LuaDist/lua.git lua
-  - git checkout ceb92f3d955faa317ce0703e788dcbdaeef81407
-  - cmake .
-  - make install
+  - git checkout 5.2.2
+  - cmake . && make install
 script: make test
