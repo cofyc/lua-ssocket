@@ -2,4 +2,3 @@
 *.so
 *.dSYM
 tags
-/lua/

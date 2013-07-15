@@ -2,4 +2,11 @@ language: c
 compiler:
   - gcc
   - clang
-script: make test
+before_install:
+  - git clone git://github.com/LuaDist/lua.git lua
+  - cd lua
+  - git checkout 5.2.2
+  - cmake . && make
+  - cd ../
+install: make CFLAGS="-I./lua/ -I./lua/src"
+script: LUA=./lua/lua prove --exec=./lua/lua --timer t/test-*.lua
