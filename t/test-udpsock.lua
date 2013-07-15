@@ -46,7 +46,7 @@ is(addr[1], '127.0.0.1')
 type_ok(addr[2], "number")
 
 -- 4. send big data
-longstr = string_repeat("a",65507)
+longstr = string_repeat("a",165507)
 ok, err = sendsock:sendto(longstr, "8.8.8.8", 53)
 is(ok, nil)
 is(err, "Message too long")
