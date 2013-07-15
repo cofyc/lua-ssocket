@@ -1,4 +1,4 @@
-BASIC_CFLAGS = -Wall -O2 -g -std=c99 -pedantic
+BASIC_CFLAGS = -Wall -O3 -fPIC -g -std=c99 -pedantic
 
 ALL_CFLAGS = $(BASIC_CFLAGS) $(CFLAGS)
 
@@ -13,9 +13,9 @@ MODULE_NAME = simple_socket
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
 ifeq ($(uname_S), Darwin)
-	SHARELIB_FLAGS = -fPIC -dynamiclib -Wl,-undefined,dynamic_lookup
+	SHARELIB_FLAGS = -dynamiclib -Wl,-undefined,dynamic_lookup
 else
-	SHARELIB_FLAGS = -fPIC --shared
+	SHARELIB_FLAGS = --shared -Wl
 endif
 
 all: $(MODULE_NAME).so
@@ -32,7 +32,7 @@ $(OBJECTS): %.o: %.c
 	$(CC) -o $*.o -c $(ALL_CFLAGS) $<
 
 $(MODULE_NAME).so: $(OBJECTS)
-	$(CC) $(ALL_CFLAGS) $(SHARELIB_FLAGS) -o $@ $^
+	$(CC) $(SHARELIB_FLAGS) -o $@ $^
 
 install: all
 	$(INSTALL_DATA) $(MODULE_NAME).so $(PREFIX)/lib/lua/$(LUA_VERSION)/$(MODULE_NAME).so
