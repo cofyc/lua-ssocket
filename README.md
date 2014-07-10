@@ -1,5 +1,5 @@
 Lua simple socket module
-=====================
+========================
 
 A simple socket module for lua. It supports: Lua 5.2.
 
