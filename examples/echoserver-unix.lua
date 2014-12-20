@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
-local socket = require "simple_socket"
+local socket = require "ssocket"
 
 SOCK_PATH = '/tmp/test.sock'
 tcpsock = socket.tcp()

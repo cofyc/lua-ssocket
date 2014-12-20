@@ -3,12 +3,12 @@ Lua simple socket module
 
 A simple socket module for lua. It supports: Lua 5.2.
 
-[![Build Status](https://travis-ci.org/Cofyc/lua-simple_socket.png?branch=master)](https://travis-ci.org/Cofyc/lua-simple_socket)
+[![Build Status](https://travis-ci.org/Cofyc/lua-ssocket.png?branch=master)](https://travis-ci.org/Cofyc/lua-ssocket)
 
 Examples
 ========
 
-    socket = require "simple_socket"
+    socket = require "ssocket"
     tcpsock = socket.tcp()
     ok, err = tcpsock:connect("www.google.com", 80)
     if err then
@@ -29,13 +29,9 @@ More examples, see *examples/* folder.
 Installation
 ============
 
-    $ git clone git://github.com/Cofyc/lua-simple-socket.git
+    $ git clone git://github.com/Cofyc/lua-ssocket.git
     $ make install
 
-By [luarocks](http://luarocks.org/)
-
-    $ luarocks make
-    
 Docs
 ====
 

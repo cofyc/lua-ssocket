@@ -4,7 +4,7 @@ local filedir = filepath:match('(.+)/[^/]*') or '.'
 package.path = string.format(";%s/?.lua;%s/../?.lua;", filedir, filedir) .. package.path
 package.cpath = string.format(";%s/?.so;%s/../?.so;", filedir, filedir) .. package.cpath
 
-local socket = require "simple_socket"
+local socket = require "ssocket"
 
 local udpsock = socket.udp()
 local ok, err = udpsock:bind("127.0.0.1", 8888)

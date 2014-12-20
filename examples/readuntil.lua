@@ -1,4 +1,4 @@
-local socket = require "simple_socket"
+local socket = require "ssocket"
 
 local sock = socket.tcp()
 local ok, err = sock:connect('www.baidu.com', 80)

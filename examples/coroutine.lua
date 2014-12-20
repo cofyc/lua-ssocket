@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
-local socket = require "simple_socket"
+local socket = require "ssocket"
 
 local paths = {}
 local contents = {}

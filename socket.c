@@ -1674,7 +1674,7 @@ static const luaL_Reg udpsock_methods[] = {
 };
 
 int
-luaopen_simple_socket(lua_State * L)
+luaopen_ssocket(lua_State * L)
 {
     luaL_checkversion(L);
     luaL_newlib(L, socketlib);
