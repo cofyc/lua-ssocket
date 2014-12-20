@@ -202,7 +202,7 @@ UDP Socket Object
     In case of success, it returns true. Otherwise, it returns nil and a string
     describing the error.
 
-* udpsock:sendto (TODO)
+* udpsock:sendto
 
     `ok, err = udpsock:send(data, host, port)`
     `ok, err = udpsock:send(data, "unix:/path/to/unix-domain.sock")`
