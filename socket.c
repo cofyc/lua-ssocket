@@ -213,9 +213,9 @@ __sockobj_setipaddr(lua_State *L, const char *name, struct sockaddr *addr_ret, s
  *    is an number.
 
  * If you use a hostname in the host portion of IPv4/IPv6 socket address, the
- * program may show a nodeterministic behavior, as we use the first address
+ * program may show a nondeterministic behavior, as we use the first address
  * returned from the DNS resolution. The socket address will be resolved
- * differenlty into an actual IPv4/v6 address, depending on the results from DNS
+ * differently into an actual IPv4/v6 address, depending on the results from DNS
  * resolution and/or the host configuration. For deterministic behavior use a
  * numeric address in host portion.
  *
@@ -887,7 +887,7 @@ sockobj_gettimeout(lua_State * L)
  * ok, err = tcpsock:connect(host, port)
  * ok, err = tcpsock:connect("unix:/path/to/unix-domain.sock")
  *
- * Attemps to connect to TCP socket object to a remote server or to a stream
+ * Attempts to connect to TCP socket object to a remote server or to a stream
  * unix domain socket file.
  */
 static int
