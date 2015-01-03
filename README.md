@@ -6,21 +6,23 @@ A simple socket module for lua. It supports: Lua 5.2+.
 
 ## Examples
 
-    socket = require "ssocket"
-    tcpsock = socket.tcp()
-    ok, err = tcpsock:connect("www.google.com", 80)
-    if err then
-        print(err)
-    end
-    tcpsock:write("GET / HTTP/1.1\r\n")
-    tcpsock:write("\r\n")
-    tcpsock:settimeout(1)
-    data, err, partial = tcpsock:read(1024)
-    if err == socket.ERROR_TIMEOUT then
-      data = partial
-    end
-    io.output():write(data)
-    tcpsock:close()
+```
+socket = require "ssocket"
+tcpsock = socket.tcp()
+ok, err = tcpsock:connect("www.google.com", 80)
+if err then
+    print(err)
+end
+tcpsock:write("GET / HTTP/1.1\r\n")
+tcpsock:write("\r\n")
+tcpsock:settimeout(1)
+data, err, partial = tcpsock:read(1024)
+if err == socket.ERROR_TIMEOUT then
+  data = partial
+end
+io.output():write(data)
+tcpsock:close()
+```
 
 More examples, see *examples/* folder.
 
@@ -73,45 +75,47 @@ More examples, see *examples/* folder.
 
     `data, err, partial = tcpsock:read(size)`
 
-    Read specified size of data from socket. This method will not return untile
-    it reads exactly the size of data or an error occurs.
+Read specified size of data from socket. This method will not return until
+it reads exactly the size of data or an error occurs.
 
-    In case of success, it returns the data received; in case of error, it
-    returns nil with a string describing the error and the partial data received
-    so far.
+In case of success, it returns the data received; in case of error, it
+returns nil with a string describing the error and the partial data received
+so far.
 
 #### tcpsock:readuntil
 
     `iterator, err = tcpsock:readuntil(pattern, inclusive?)`
 
-    This method returns an iterator function that can be called to read the data
-    stream until it sees the specified pattern or an error occurs.
+This method returns an iterator function that can be called to read the data
+stream until it sees the specified pattern or an error occurs.
 
-    It also takes an optional inclusive argument to control whether to include
-    the pattern string in the returned data string. Default to false.
+It also takes an optional inclusive argument to control whether to include
+the pattern string in the returned data string. Default to false.
 
-    For example:
+For example:
 
-        local reader = tcpsock:readuntil("\r\n")
-        while true do
-            local data, err, partial = reader()
-            if data then
-                printf("line: " .. data)
-            end
+```
+    local reader = tcpsock:readuntil("\r\n")
+    while true do
+        local data, err, partial = reader()
+        if data then
+            printf("line: " .. data)
         end
+    end
+```
 
-    This iterator function returns the received data right before the specified
-    pattern string in the incoming data stream.
+This iterator function returns the received data right before the specified
+pattern string in the incoming data stream.
 
-    In case of error, it will return nil along with a string describing the
-    error and the partial data bytes that have been read so far.
+In case of error, it will return nil along with a string describing the
+error and the partial data bytes that have been read so far.
 
 #### tcpsock:close
   
     `ok, err = tcpsock:close()`
 
-  Closes the current TCP or stream unix domain socket. It returns the 1 in case
-  of success and returns nil with a string describing the error otherwise.
+Closes the current TCP or stream unix domain socket. It returns the 1 in case
+of success and returns nil with a string describing the error otherwise.
 
 #### tcpsock:shutdown
 
@@ -133,15 +137,15 @@ More examples, see *examples/* folder.
 
     `tcpsock:settimeout(timeout)`
 
-  Set the timeout in seconds for subsequent socket operations.
-  A negative timeout indicates that timeout is disabled, which is default.
+Set the timeout in seconds for subsequent socket operations.
+A negative timeout indicates that timeout is disabled, which is default.
 
 #### tcpsock:gettimeout
 
     `timeout = tcpsock:gettimeout()`
 
-  Returns the timeout in seconds associated with socket.
-  A negative timeout indicates that timeout is disabled, which is default.
+Returns the timeout in seconds associated with socket.
+A negative timeout indicates that timeout is disabled, which is default.
 
 #### tcpsock:getpeername
 
@@ -158,10 +162,10 @@ More examples, see *examples/* folder.
     `ok, err = udpsock:connect(host, port)`
     `ok, err = udpsock:connect("unix:/path/to/unix-domain.sock")`
 
-    Calling connect() on a datagram socket causes the kernel to record a particular
-    address as this socket’s peer.
-    We can change the peer of a connected datagram socket by issuing a further
-    connect() call. 
+Calling connect() on a datagram socket causes the kernel to record a particular
+address as this socket’s peer.
+We can change the peer of a connected datagram socket by issuing a further
+connect() call. 
 
 #### udpsock:bind
 
@@ -172,46 +176,46 @@ More examples, see *examples/* folder.
   
     `data, err = udpsock:recv(buffersize)`
  
-    Receive up to buffersize bytes from UDP or datagram unix domain socket
-    object.
-   
-    In case of success, it returns the data received; in case of error, it
-    returns nil with a string describing the error.
+Receive up to buffersize bytes from UDP or datagram unix domain socket
+object.
+
+In case of success, it returns the data received; in case of error, it
+returns nil with a string describing the error.
 
 #### udpsock:recvfrom
 
     `data, addr, err = udpsock:recvfrom(buffersize)`
 
-    Works exactly as the udpsock:recv method, except it returns the addr as extra
-    return values (and is therefore slightly less efficient) in
-    case of success.
+Works exactly as the udpsock:recv method, except it returns the `addr` as extra
+return values (and is therefore slightly less efficient) in
+case of success.
 
 #### udpsock:send
 
     `ok, err = tcpsock:write(data)`
 
-    Writes data on the current UDP or datagram unix domain socket object.
-   
-    In case of success, it returns true. Otherwise, it returns nil and a string
-    describing the error.
+Writes data on the current UDP or datagram unix domain socket object.
+
+In case of success, it returns true. Otherwise, it returns nil and a string
+describing the error.
 
 #### udpsock:sendto
 
     `ok, err = udpsock:send(data, host, port)`
     `ok, err = udpsock:send(data, "unix:/path/to/unix-domain.sock")`
    
-    Writes data on the current UDP or datagram unix domain socket object to
-    specified address.
-   
-    In case of success, it returns true. Otherwise, it returns nil and a string
-    describing the error.
+Writes data on the current UDP or datagram unix domain socket object to
+specified address.
+
+In case of success, it returns true. Otherwise, it returns nil and a string
+describing the error.
 
 #### udpsock:close
   
     `ok, err = udpsock:close()`
 
-  Closes the current UDP or datagram unix domain socket. It returns the 1 in
-  case of success and returns nil with a string describing the error otherwise.
+Closes the current UDP or datagram unix domain socket. It returns the 1 in
+case of success and returns nil with a string describing the error otherwise.
 
 #### udpsock:fileno
 
@@ -246,8 +250,8 @@ SHUT_* are tcpsock:shutdown() parameters:
 ERROR_* are predefined error strings, which can be used to detect errors:
 
   * socket.ERROR_TIMEOUT
-  * scoekt.ERROR_CLOSED
-  * scoekt.ERROR_REFUSED
+  * socket.ERROR_CLOSED
+  * socket.ERROR_REFUSED
 
 ## References
 
