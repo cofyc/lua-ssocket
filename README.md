@@ -1,12 +1,10 @@
-Lua simple socket module
-========================
+# Lua simple socket module
 
-A simple socket module for lua. It supports: Lua 5.2.
+A simple socket module for lua. It supports: Lua 5.2+.
 
 [![Build Status](https://travis-ci.org/Cofyc/lua-ssocket.png?branch=master)](https://travis-ci.org/Cofyc/lua-ssocket)
 
-Examples
-========
+## Examples
 
     socket = require "ssocket"
     tcpsock = socket.tcp()
@@ -26,56 +24,52 @@ Examples
 
 More examples, see *examples/* folder.
 
-Installation
-============
+## Installation
 
     $ git clone git://github.com/Cofyc/lua-ssocket.git
     $ make install
 
-Docs
-====
+## Docs
 
-Socket Module
--------------
+### Socket Module
 
-* socket.tcp
+#### socket.tcp
 
     `tcpsock, err = socket.tcp()`
 
-* socket.udp
+#### socket.udp
 
     `udpsock, err = socket.udp()`
 
-* socket.select
+#### socket.select
 
     `readfds, writefds, err = socket.select(readfds, writefds[, timeout=-1])`
 
-TCP Socket Object
------------------
+### TCP Socket Object
 
-* tcpsock:connect
+#### tcpsock:connect
 
     `ok, err = tcpsock:connect(host, port)`
     `ok, err = tcpsock:connect("unix:/path/to/unix-domain.sock")`
 
-* tcpsock:bind
+#### tcpsock:bind
 
     `ok, err = tcpsock:bind(host, port)`
     `ok, err = tcpsock:bind("unix:/path/to/unix-domain.sock")`
 
-* tcpsock:listen
+#### tcpsock:listen
 
     `ok, err = tcpsock:listen(backlog)`
 
-* tcpsock:accept
+#### tcpsock:accept
 
     `tcpsock, err = tcpsock:accept()`
 
-* tcpsock:write
+#### tcpsock:write
 
     `bytes, err = tcpsock:write(data)`
 
-* tcpsock:read
+#### tcpsock:read
 
     `data, err, partial = tcpsock:read(size)`
 
@@ -86,7 +80,7 @@ TCP Socket Object
     returns nil with a string describing the error and the partial data received
     so far.
 
-* tcpsock:readuntil
+#### tcpsock:readuntil
 
     `iterator, err = tcpsock:readuntil(pattern, inclusive?)`
 
@@ -112,55 +106,54 @@ TCP Socket Object
     In case of error, it will return nil along with a string describing the
     error and the partial data bytes that have been read so far.
 
-* tcpsock:close
+#### tcpsock:close
   
     `ok, err = tcpsock:close()`
 
   Closes the current TCP or stream unix domain socket. It returns the 1 in case
   of success and returns nil with a string describing the error otherwise.
 
-* tcpsock:shutdown
+#### tcpsock:shutdown
 
     `ok, err = tcpsock:shutdown(how)`
 
-* tcpsock:fileno
+#### tcpsock:fileno
 
     `fd = tcpsock:fileno()`
 
-* tcpsock:setopt
+#### tcpsock:setopt
 
     `ok, err = tcpsock:setopt(opt, value)`
 
-* tcpsock:getopt
+#### tcpsock:getopt
 
     `value, err = tcpsock:getopt(level, opt)`
 
-* tcpsock:settimeout
+#### tcpsock:settimeout
 
     `tcpsock:settimeout(timeout)`
 
   Set the timeout in seconds for subsequent socket operations.
   A negative timeout indicates that timeout is disabled, which is default.
 
-* tcpsock:gettimeout
+#### tcpsock:gettimeout
 
     `timeout = tcpsock:gettimeout()`
 
   Returns the timeout in seconds associated with socket.
   A negative timeout indicates that timeout is disabled, which is default.
 
-* tcpsock:getpeername
+#### tcpsock:getpeername
 
     `addr, err = tcpsock:getpeername()`
 
-* tcpsock:getsockname
+#### tcpsock:getsockname
 
     `addr, err = tcpsock:getsockname()`
 
-UDP Socket Object
------------------
+### UDP Socket Object
 
-* udpsock:connect
+#### udpsock:connect
 
     `ok, err = udpsock:connect(host, port)`
     `ok, err = udpsock:connect("unix:/path/to/unix-domain.sock")`
@@ -170,12 +163,12 @@ UDP Socket Object
     We can change the peer of a connected datagram socket by issuing a further
     connect() call. 
 
-* udpsock:bind
+#### udpsock:bind
 
     `ok, err = udpsock:bind(host, port)`
     `ok, err = udpsock:bind("unix:/path/to/unix-domain.sock")`
 
-* udpsock:recv
+#### udpsock:recv
   
     `data, err = udpsock:recv(buffersize)`
  
@@ -185,7 +178,7 @@ UDP Socket Object
     In case of success, it returns the data received; in case of error, it
     returns nil with a string describing the error.
 
-* udpsock:recvfrom
+#### udpsock:recvfrom
 
     `data, addr, err = udpsock:recvfrom(buffersize)`
 
@@ -193,7 +186,7 @@ UDP Socket Object
     return values (and is therefore slightly less efficient) in
     case of success.
 
-* udpsock:send
+#### udpsock:send
 
     `ok, err = tcpsock:write(data)`
 
@@ -202,7 +195,7 @@ UDP Socket Object
     In case of success, it returns true. Otherwise, it returns nil and a string
     describing the error.
 
-* udpsock:sendto
+#### udpsock:sendto
 
     `ok, err = udpsock:send(data, host, port)`
     `ok, err = udpsock:send(data, "unix:/path/to/unix-domain.sock")`
@@ -213,27 +206,26 @@ UDP Socket Object
     In case of success, it returns true. Otherwise, it returns nil and a string
     describing the error.
 
-* udpsock:close
+#### udpsock:close
   
     `ok, err = udpsock:close()`
 
   Closes the current UDP or datagram unix domain socket. It returns the 1 in
   case of success and returns nil with a string describing the error otherwise.
 
-* udpsock:fileno
+#### udpsock:fileno
 
     `fd = udpsock:fileno()`
 
-* udpsock:settimeout
+#### udpsock:settimeout
 
     `udpsock:settimeout(timeout)`
 
-* udpsock:gettimeout
+#### udpsock:gettimeout
 
     `timeout = udpsock:gettimeout()`
 
-Contants
---------
+### Contants
 
 Module infos:
     
@@ -257,8 +249,7 @@ ERROR_* are predefined error strings, which can be used to detect errors:
   * scoekt.ERROR_CLOSED
   * scoekt.ERROR_REFUSED
 
-References
-==========
+## References
 
 1. http://w3.impa.br/~diego/software/luasocket/reference.html
 2. http://golang.org/pkg/net/
