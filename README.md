@@ -2,7 +2,7 @@
 
 A simple socket module for lua. It supports: Lua 5.2+.
 
-[![Build Status](https://travis-ci.org/Cofyc/lua-ssocket.png?branch=master)](https://travis-ci.org/Cofyc/lua-ssocket)
+[![Build Status](https://travis-ci.org/cofyc/lua-ssocket.png?branch=master)](https://travis-ci.org/cofyc/lua-ssocket)
 
 ## Examples
 
@@ -28,7 +28,7 @@ More examples, see *examples/* folder.
 
 ## Installation
 
-    $ git clone git://github.com/Cofyc/lua-ssocket.git
+    $ git clone git://github.com/cofyc/lua-ssocket.git
     $ make install
 
 ## Docs
